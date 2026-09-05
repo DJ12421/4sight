@@ -1,0 +1,16 @@
+import { useState } from 'react';
+import { ArrowLeft, ArrowRight } from 'lucide-react';
+import { sampleDecisions, sampleReport } from '../sample';
+import { PatternCards } from './Patterns';
+import { CommitmentView } from './DecisionEditor';
+
+export function SampleJourney({ onBack, onCopy, busy = false, copyLabel = 'Copy examples into my workspace' }: { onBack: () => void; onCopy: () => void; busy?: boolean; copyLabel?: string }) {
+  const [step, setStep] = useState(0);
+  const first = sampleDecisions[1], second = sampleDecisions[0];
+  const current = step < 2 ? first : second;
+  return <div className="sample-page"><button className="text-button back" onClick={onBack}><ArrowLeft size={16} /> Back</button><div className="page-heading"><div><p className="eyebrow">An interactive walkthrough</p><h1>One decision leads to the next.</h1></div><span className="tag">Fictional example</span></div><p className="sample-banner">This is a written demonstration, not live AI output or your personal history. Nothing is saved unless you choose to copy it.</p>
+    <nav className="sample-steps" aria-label="Walkthrough">{['Choose a project', 'Review the outcome', 'Apply the learning', 'Connect the evidence'].map((label, i) => <button key={label} aria-current={step === i ? 'step' : undefined} onClick={() => setStep(i)}><span>{i + 1}</span>{label}</button>)}</nav>
+    {step === 3 ? <PatternCards report={sampleReport} decisions={sampleDecisions} onOpen={d => setStep(d.id === first.id ? 1 : 2)} /> : <div className="editor-grid"><section className="paper"><p className="eyebrow">{step === 0 ? 'A student’s first decision' : step === 1 ? 'Two weeks later' : 'A new decision, with context'}</p><h2>{current.title}</h2><p>{current.dilemma}</p>{step === 0 ? <><blockquote>“I worry the smaller project will look less impressive.”</blockquote><p className="muted">Foresight helps turn “impressive” into a question the student can test.</p><div className="option-cards">{current.brief.options.map((o, i) => <div key={o}><span className="eyebrow">Option {String.fromCharCode(65 + i)}</span><h3>{o}</h3></div>)}</div></> : <><div className="evidence-block"><p className="eyebrow">{step === 1 ? 'The student recorded' : 'Past experience selected by the student'}</p><p>{first.reviews[0].outcome}</p><p><strong>Lesson:</strong> {first.reviews[0].lesson}</p></div>{step === 2 && <div className="ai-note"><p className="eyebrow">A question to carry forward</p><p>Could a small, tailored application batch help you learn before committing your entire search to one strategy?</p><button className="source-link" onClick={() => setStep(1)}>View the project outcome ↗</button></div>}</>}</section><section className="paper expectation"><p className="eyebrow">{step === 1 ? 'Expectation, preserved' : 'The student’s commitment'}</p><CommitmentView value={current.commitment!} /></section></div>}
+    <div className="sample-bottom"><p className="muted">{step + 1} of 4 · Clarify → commit → review → apply</p>{step < 3 ? <button onClick={() => setStep(step + 1)}>Continue the story <ArrowRight size={16} /></button> : <button disabled={busy} onClick={onCopy}>{busy ? 'One moment…' : copyLabel} <ArrowRight size={16} /></button>}</div>
+  </div>;
+}

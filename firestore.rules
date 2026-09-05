@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function owner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    // New writes go through the authenticated backend. Admin SDK bypasses rules,
+    // so server/mutations.ts validates fields, revisions, and immutable commitments.
+    match /users/{userId}/decisions/{decisionId} {
+      allow read: if owner(userId);
+      allow write: if false;
+    }
+    match /users/{userId}/insights/{insightId} {
+      allow read: if owner(userId);
+      allow write: if false;
+    }
+    // Quota counters are server-owned; clients cannot reset their allowance.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+    // Preserve the previous journal as a read-only archive.
+    match /users/{userId}/interactions/{interactionId} {
+      allow read: if owner(userId);
+      allow write: if false;
+    }
+  }
+}

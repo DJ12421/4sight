@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+.npm-cache/
+**/*service-account*.json
+**/credentials*.json
+docs/evidence/

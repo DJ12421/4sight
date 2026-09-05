@@ -1,0 +1,11 @@
+﻿{
+  "name": "Foresight",
+  "description": "Private decisions with immutable commitments, append-only outcome reviews and evidence-linked AI interpretations.",
+  "sourceOfTruth": "src/domain.ts",
+  "firestore": {
+    "/users/{uid}/decisions/{id}": { "type": "Decision", "client": "owner read only", "writes": "authenticated server transactions" },
+    "/users/{uid}/insights/latest": { "type": "PatternReport", "client": "owner read only", "writes": "server, after validating source revisions" },
+    "/users/{uid}/usage/current": { "client": "denied", "writes": "server quota transaction" },
+    "/users/{uid}/interactions/{id}": { "type": "JournalInteraction", "client": "owner read only", "writes": "retired legacy archive" }
+  }
+}

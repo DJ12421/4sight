@@ -1,0 +1,23 @@
+import { Decision, PatternReport } from './domain';
+
+const first: Decision = {
+  id: 'sample-project', title: 'A portfolio project I can actually finish',
+  dilemma: 'I have four weekends before internship applications. Should I build an ambitious social platform or a focused campus study-room finder?',
+  brief: { options: ['Build a campus study-room finder', 'Build a full social platform'], priorities: 'Finish something useful and explain my technical choices in interviews.', constraints: 'Four weekends, a small budget, and one developer.', assumptions: 'A smaller project will leave time to test with real students.', questions: 'Will students use a simple room finder without booking features?' },
+  turns: [{ role: 'user', text: 'I worry the smaller project will look less impressive.' }, { role: 'model', text: 'What would demonstrate your ability more clearly: a long feature list, or a finished project with evidence that someone used it?' }],
+  sourceIds: [],
+  commitment: { option: 'Build a campus study-room finder', reasoning: 'I want a finished artifact and real feedback.', expectedOutcome: 'At least five students will find a room using the prototype.', confidence: 70, experiment: 'Build one searchable campus map and give it to five classmates.', successCriteria: 'Five students complete a room search without my help.', reviewDate: '2026-08-16', committedAt: '2026-08-01T10:00:00.000Z' },
+  reviews: [{ id: 'sample-review-project', outcome: 'Six students tried it. Five found a room without help. Two asked for opening hours, not a booking feature.', lesson: 'A small finished product gave me more useful feedback than adding features alone.', result: 'met', analysis: 'The recorded test met the five-student criterion. This supports the narrow scope for this experiment; it does not establish that smaller projects are always better.', model: 'Fictional example', createdAt: '2026-08-16T10:00:00.000Z' }],
+  revision: 1, lastMutationId: 'sample-import-v1', createdAt: '2026-08-01T10:00:00.000Z', updatedAt: '2026-08-16T10:00:00.000Z', sample: true,
+};
+const second: Decision = {
+  ...first, id: 'sample-internship', title: 'How should I spend my application week?',
+  dilemma: 'Should I send forty generic internship applications or spend a week tailoring six applications around my room-finder project?',
+  brief: { options: ['Tailor six applications with project evidence', 'Send forty generic applications'], priorities: 'Have useful conversations with teams where I could contribute.', constraints: 'One week outside classes.', assumptions: 'Specific evidence of my work may start better conversations.', questions: 'Is six enough to learn from? What counts as a useful response?' },
+  sourceIds: [first.id], turns: [{ role: 'model', text: 'Your room-finder review records that a small, testable effort produced useful feedback. Could you test the tailored approach before committing your entire search to it? This is a hypothesis, not a prediction.' }],
+  commitment: { option: 'Tailor six applications with project evidence', reasoning: 'Try a bounded batch first, then adapt.', expectedOutcome: 'Receive two meaningful replies within two weeks.', confidence: 60, experiment: 'Send six tailored applications with a short project case study.', successCriteria: 'Two replies that discuss my work or offer a next step.', reviewDate: '2026-09-01', committedAt: '2026-08-18T10:00:00.000Z' },
+  reviews: [{ id: 'sample-review-internship', outcome: 'Two teams replied about the project. One invited me to an interview. I do not know how the generic approach would have performed.', lesson: 'A bounded effort with concrete evidence gave me something useful to evaluate.', result: 'met', analysis: 'The two-reply criterion was met. Without a comparison group, the result cannot establish that tailoring caused the replies.', model: 'Fictional example', createdAt: '2026-09-01T10:00:00.000Z' }],
+  createdAt: '2026-08-18T10:00:00.000Z', updatedAt: '2026-09-01T10:00:00.000Z',
+};
+export const sampleDecisions = [second, first];
+export const sampleReport: PatternReport = { insights: [{ observation: 'Small, bounded experiments may help you learn before making a larger commitment.', evidence: 'The room finder reached five independent searches; the six-application experiment received two meaningful replies. Both reviews describe a concrete, limited test.', question: 'What would a one-week test look like for your next decision?', sourceIds: [first.id, second.id] }], sources: sampleDecisions.map(d => ({ id: d.id, revision: d.revision })), model: 'Fictional example — not a live AI result', createdAt: '2026-09-01T10:00:00.000Z' };

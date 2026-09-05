@@ -1,0 +1,137 @@
+import express from 'express';
+import { getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
+import { getAuth } from 'firebase-admin/auth';
+import { getFirestore, Firestore } from 'firebase-admin/firestore';
+import config from '../firebase-applet-config.json';
+import { AIAction, Decision, InputError, PatternReport, evidenceRecord, identifier, ids, object, parseDraft, text } from '../src/domain';
+import { sampleDecisions } from '../src/sample';
+import { generate } from './ai';
+import { ConflictError, mutateDecision } from './mutations';
+
+function adminApp() { return getApps()[0] || initializeApp({ credential: applicationDefault(), projectId: process.env.GOOGLE_CLOUD_PROJECT || config.projectId }); }
+function database() { return getFirestore(adminApp(), process.env.FIRESTORE_DATABASE_ID || config.firestoreDatabaseId || '(default)'); }
+class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
+type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Promise<{ uid: string }>; generate?: typeof generate };
+
+export function createApp(deps: Dependencies = {}) {
+  const app = express();
+  app.disable('x-powered-by');
+  const db = deps.db || database;
+  const verify = deps.verifyToken || ((token: string) => getAuth(adminApp()).verifyIdToken(token, true));
+  const runAI = deps.generate || generate;
+  app.use((_req, res, next) => {
+    res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' });
+    next();
+  });
+  app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+  app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
+  app.use('/api', async (req, res, next) => {
+    const match = /^Bearer (\S+)$/.exec(req.headers.authorization || '');
+    if (!match) return res.status(401).json({ error: 'Sign in to continue.' });
+    try { res.locals.uid = (await verify(match[1])).uid; next(); }
+    catch { res.status(401).json({ error: 'Your session expired. Sign in again.' }); }
+  });
+  app.use('/api', express.json({ limit: '256kb' }));
+  const route = (fn: (req: express.Request, res: express.Response) => Promise<unknown>): express.RequestHandler =>
+    (req, res, next) => { Promise.resolve(fn(req, res)).catch(next); };
+  const decisionRef = (uid: string, id: string) => db().doc(`users/${uid}/decisions/${id}`);
+  async function sources(uid: string, selected: string[]) {
+    const docs = await Promise.all(selected.map(id => decisionRef(uid, id).get()));
+    return docs.map(s => {
+      if (!s.exists) throw new ApiError(404, 'A selected source is unavailable. Update your selection.');
+      const d = s.data() as Decision;
+      if (!d.reviews.length) throw new InputError('Only reviewed decisions can be used as past evidence.');
+      return d;
+    });
+  }
+  async function consumeQuota(uid: string) {
+    const ref = db().doc(`users/${uid}/usage/current`), now = Date.now();
+    await db().runTransaction(async tx => {
+      const old = (await tx.get(ref)).data();
+      const day = new Date(now).toISOString().slice(0, 10), minute = Math.floor(now / 60000);
+      const daily = old?.day === day ? Number(old.daily) : 0;
+      const recent = old?.minute === minute ? Number(old.recent) : 0;
+      if (daily >= 50 || recent >= 5) throw new ApiError(429, daily >= 50 ? 'Your 50 AI requests for today are used. You can still write, save, and review without AI.' : 'Please wait a minute before asking Gemini again.');
+      tx.set(ref, { day, minute, daily: daily + 1, recent: recent + 1 });
+    });
+  }
+  app.put('/api/decisions/:id', route(async (req, res) => {
+    const id = identifier(req.params.id), ref = decisionRef(res.locals.uid, id), body = object(req.body);
+    if (body.operation === 'draft') await sources(res.locals.uid, ids(object(body.draft).sourceIds));
+    const saved = await db().runTransaction(async tx => {
+      const snapshot = await tx.get(ref);
+      const decision = mutateDecision(id, snapshot.exists ? snapshot.data() as Decision : null, body, new Date().toISOString());
+      tx.set(ref, decision);
+      return decision;
+    });
+    return res.json(saved);
+  }));
+  app.delete('/api/decisions/:id', route(async (req, res) => {
+    const id = identifier(req.params.id), ref = decisionRef(res.locals.uid, id);
+    const reportRef = db().doc(`users/${res.locals.uid}/insights/latest`);
+    await db().runTransaction(async tx => {
+      const [snapshot, report] = await tx.getAll(ref, reportRef);
+      if (snapshot.exists && snapshot.data()?.revision !== Number(req.query.revision)) throw new ConflictError('This decision changed elsewhere. Reopen it before deleting.');
+      tx.delete(ref);
+      if ((report.data() as PatternReport | undefined)?.sources.some(source => source.id === id)) tx.delete(reportRef);
+    });
+    return res.json({ success: true });
+  }));
+  app.post('/api/sample', route(async (_req, res) => {
+    await db().runTransaction(async tx => {
+      const refs = sampleDecisions.map(d => decisionRef(res.locals.uid, d.id));
+      const snapshots = await tx.getAll(...refs);
+      snapshots.forEach((snapshot, i) => { if (!snapshot.exists) tx.set(refs[i], sampleDecisions[i]); });
+    });
+    return res.json({ success: true });
+  }));
+  app.post('/api/ai', route(async (req, res) => {
+    const body = object(req.body), action = body.action as AIAction;
+    if (!['chat', 'brief', 'review', 'patterns'].includes(action)) throw new InputError('Unknown AI action.');
+    const selected = ids(body.sourceIds ?? []);
+    const evidence = await sources(res.locals.uid, selected);
+    const versions = body.sourceVersions ?? [];
+    if (!Array.isArray(versions) || versions.length !== evidence.length || evidence.some((d, i) => versions[i]?.id !== d.id || versions[i]?.revision !== d.revision)) {
+      throw new ConflictError('A selected source changed. Inspect the current preview before asking Gemini again.');
+    }
+    let payload: unknown;
+    if (action === 'patterns') {
+      if (evidence.length < 2) throw new InputError('Select at least two reviewed decisions to look for patterns.');
+      if (evidence.some(d => d.sample) && evidence.some(d => !d.sample)) throw new InputError('Analyze fictional examples separately from personal decisions.');
+      payload = { evidence: evidence.map(evidenceRecord) };
+    } else if (action === 'review') {
+      const snapshot = await decisionRef(res.locals.uid, identifier(body.decisionId)).get();
+      if (!snapshot.exists) throw new ApiError(404, 'Decision not found.');
+      const decision = snapshot.data() as Decision;
+      if (!decision.commitment) throw new InputError('Commit to your decision before reviewing it.');
+      payload = { title: decision.title, dilemma: decision.dilemma, commitment: decision.commitment,
+        outcome: text(body.outcome, 'Outcome'), lesson: text(body.lesson, 'Lesson', 2000, false) };
+    } else {
+      const draft = parseDraft(body.draft);
+      payload = { ...draft, message: text(body.message ?? '', 'Message', 4000, action === 'chat'), evidence: evidence.map(evidenceRecord) };
+    }
+    if (JSON.stringify(payload).length > 100000) throw new InputError('This context is too large. Select fewer past decisions or shorten the conversation.');
+    await consumeQuota(res.locals.uid);
+    let result;
+    try { result = await runAI(action, payload, selected); }
+    catch { throw new ApiError(502, 'Gemini could not return a valid answer. Your writing is safe. Try again, or continue without AI.'); }
+    if (action === 'patterns') {
+      const report: PatternReport = { insights: result.insights || [], sources: evidence.map(d => ({ id: d.id, revision: d.revision })), model: result.model, createdAt: new Date().toISOString() };
+      await db().runTransaction(async tx => {
+        const snapshots = await tx.getAll(...selected.map(id => decisionRef(res.locals.uid, id)));
+        if (snapshots.some((s, i) => !s.exists || s.data()?.revision !== evidence[i].revision)) throw new ConflictError('A source changed during analysis. Select the current records and try again.');
+        tx.set(db().doc(`users/${res.locals.uid}/insights/latest`), report);
+      });
+      return res.json(report);
+    }
+    return res.json(result);
+  }));
+  app.post('/api/reflect', (_req, res) => res.status(410).json({ error: 'Use the Foresight decision workspace to start a conversation.' }));
+  app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
+  app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    const status = err instanceof InputError ? 400 : err instanceof ConflictError ? 409 : err instanceof ApiError ? err.status : err.type === 'entity.too.large' ? 413 : err instanceof SyntaxError ? 400 : 503;
+    if (status === 503) console.error('Request failed', { category: err.name });
+    res.status(status).json({ error: status === 413 ? 'This request is too large.' : status === 503 ? 'The service could not complete this request. Your draft is still available; retry shortly.' : err instanceof SyntaxError ? 'Invalid request body.' : err.message });
+  });
+  return app;
+}

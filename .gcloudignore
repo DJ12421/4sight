@@ -1,0 +1,12 @@
+.git
+node_modules
+.npm-cache
+dist
+.env
+.env.*
+!.env.example
+*.log
+coverage
+docs/evidence
+**/*service-account*.json
+**/credentials*.json

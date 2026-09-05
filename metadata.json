@@ -1,0 +1,6 @@
+{
+  "name": "Foresight",
+  "description": "A private decision journal: clarify your options, test your assumptions, review outcomes, and connect lessons to their evidence.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
