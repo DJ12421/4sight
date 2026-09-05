@@ -7,6 +7,7 @@ Implementation is present. Automated tests, builds, type checks, browser validat
 ## The product
 
 - A conversation with Gemini and an editable brief make options, priorities, constraints, assumptions, and unanswered questions visible.
+- A dedicated journal turns free-form writing into a private, mode-specific Gemini reflection. Users can continue the conversation or carry an entry into the decision workflow without retyping it; earlier Gemini Reflections entries remain available in the same timeline.
 - A commitment records the choice, reasoning, expected outcome, confidence, experiment, success criteria, and review date. It cannot be overwritten after commitment.
 - Outcome reviews append observations and lessons alongside the original expectation. Optional Gemini analysis is labeled as interpretation.
 - A pre-commitment challenge asks Gemini for the strongest counterargument, weakest assumption, and evidence that should change the user's mind.
@@ -14,7 +15,6 @@ Implementation is present. Automated tests, builds, type checks, browser validat
 - Pattern reflections cite at least two selected reviewed decisions. References are validated; changed or deleted sources invalidate the displayed report.
 - Past experience is opt-in. The preview shows the exact bounded representation shared: choice, expectation, experiment, and the last three outcome/lesson pairs. Up to 20 records can be selected.
 - A four-step fictional student journey demonstrates the loop without sign-in or an AI call. Copying the examples into a signed-in workspace is explicit and idempotent. Examples retain their labels and cannot be mixed with personal records for pattern analysis.
-- Original Gemini Reflections entries remain in a read-only archive.
 
 ## Architecture and trust boundaries
 
@@ -40,7 +40,7 @@ Data paths:
 | `decisions/{id}` | Brief, conversation, immutable commitment, append-only reviews, revision and retry ID |
 | `insights/latest` | Latest generated interpretation, source IDs and source revisions |
 | `usage/current` | Server-only minute/day quota counters |
-| `interactions/{id}` | Original journal data, unchanged and read-only |
+| `interactions/{id}` | Journal entry, Gemini reflection, and follow-up conversation |
 
 Decision writes use Firestore transactions. The client retains a stable decision ID and mutation ID for retries. A repeated acknowledged operation does not append another review. Revision conflicts preserve the browser draft and require reopening the current saved record; the app never silently overwrites a concurrent edit. Commitments cannot be edited, but deleting a decision removes its complete history after confirmation.
 
@@ -73,6 +73,7 @@ Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/ap
 | `PUT /api/decisions/:id` | `{operation, revision, mutationId, draft? , commitment?, review?}`; operation is `draft`, `commit`, or `review`; returns saved `Decision` |
 | `DELETE /api/decisions/:id?revision=N` | Conditional deletion of the authenticated owner's decision |
 | `POST /api/ai` | `{action, sourceIds, sourceVersions?, draft?, message?, decisionId?, outcome?, lesson?}`; action is `chat`, `brief`, `challenge`, `review`, or `patterns`; selected sources require matching `{id, revision}` pairs so unseen edits are not silently sent |
+| `POST /api/journal` | Creates an owner-scoped journal entry with a Gemini reflection, or appends a follow-up turn to an existing entry |
 | `POST /api/sample` | Copies two fictional decisions using stable IDs without overwriting existing copies |
 
 Chat, challenge, and brief AI actions return an `AIResult`, and the client saves the resulting draft. Review AI returns an interpretation for the user to inspect before saving. Pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410 after authentication; old journal entries remain readable.
@@ -110,13 +111,16 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /users/{userId}/interactions/{interactionId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
     match /users/{userId}/decisions/{decisionId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
     match /users/{userId}/insights/{insightId} {
-      allow read, write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
     }
   }
 }

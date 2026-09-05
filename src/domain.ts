@@ -47,7 +47,7 @@ export interface PatternReport {
   model: string;
   createdAt: string;
 }
-export type AIAction = 'chat' | 'brief' | 'challenge' | 'review' | 'patterns';
+export type AIAction = 'chat' | 'brief' | 'challenge' | 'review' | 'patterns' | 'journal';
 export interface AIResult { reply?: string; brief?: Brief; insights?: Insight[]; model: string }
 export const emptyBrief = (): Brief => ({ options: ['', ''], priorities: '', constraints: '', assumptions: '', questions: '' });
 export function newDecision(): Decision {

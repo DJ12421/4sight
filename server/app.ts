@@ -5,6 +5,7 @@ import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import config from '../firebase-applet-config.json';
 import { AIAction, Decision, InputError, PatternReport, evidenceRecord, identifier, ids, object, parseCommitment, parseDraft, text } from '../src/domain';
 import { sampleDecisions } from '../src/sample';
+import { JournalInteraction, ReflectionMode } from '../src/types';
 import { generate } from './ai';
 import { ConflictError, mutateDecision } from './mutations';
 
@@ -29,38 +30,8 @@ function adminApp() {
   }
 }
 
-function createMemoryStore() {
-  const records = new Map<string, unknown>();
-  const doc = (path: string) => ({
-    path,
-    get: async () => ({ exists: records.has(path), data: () => records.get(path) })
-  });
-  type Ref = ReturnType<typeof doc>;
-  const store = {
-    doc,
-    runTransaction: async (fn: (tx: unknown) => unknown) => {
-      const writes: (() => void)[] = [];
-      const result = await fn({
-        get: (ref: Ref) => ref.get(),
-        getAll: (...refs: Ref[]) => Promise.all(refs.map(r => r.get())),
-        set: (ref: Ref, value: unknown) => writes.push(() => records.set(ref.path, structuredClone(value))),
-        delete: (ref: Ref) => writes.push(() => records.delete(ref.path))
-      });
-      writes.forEach(write => write());
-      return result;
-    }
-  };
-  return store as unknown as Firestore;
-}
-
-const memoryDb = createMemoryStore();
-const useAdminDb = process.env.NODE_ENV === 'production' || Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.USE_ADMIN_FIRESTORE);
-
 function database(): Firestore {
-  if (useAdminDb) {
-    return getFirestore(adminApp(), config.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)');
-  }
-  return memoryDb;
+  return getFirestore(adminApp(), config.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)');
 }
 class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Promise<{ uid: string }>; generate?: typeof generate };
@@ -159,6 +130,37 @@ export function createApp(deps: Dependencies = {}) {
       snapshots.forEach((snapshot, i) => { if (!snapshot.exists) tx.set(refs[i], sampleDecisions[i]); });
     });
     return res.json({ success: true });
+  }));
+  app.post('/api/journal', route(async (req, res) => {
+    const body = object(req.body), id = identifier(body.id), ref = db().doc(`users/${res.locals.uid}/interactions/${id}`);
+    const snapshot = await ref.get();
+    const previous = snapshot.exists ? snapshot.data() as JournalInteraction : null;
+    const modes: ReflectionMode[] = ['reflect', 'summarize', 'brainstorm', 'chat'];
+    const mode = previous?.mode || body.mode;
+    if (!modes.includes(mode as ReflectionMode)) throw new InputError('Choose a journal reflection style.');
+    const turns = (previous?.turns || []).map(turn => ({ role: turn.role, text: text(turn.text, 'Journal message', 6000), timestamp: text(turn.timestamp || previous?.updatedAt || previous?.createdAt, 'Timestamp', 40) }));
+    if (turns.some(turn => turn.role !== 'user' && turn.role !== 'model') || turns.length > 38) throw new InputError('This journal conversation is full. Start a new entry to continue.');
+    const message = previous ? text(body.message, 'Follow-up', 4000) : '';
+    const title = previous ? text(previous.title, 'Title', 150) : text(body.title, 'Title', 150);
+    const prompt = previous ? text(previous.prompt, 'Journal entry', 6000) : text(body.entry, 'Journal entry', 6000);
+    const response = previous ? text(previous.response, 'Gemini reflection', 6000) : '';
+    const payload = { mode, title, entry: prompt, initialReflection: response, turns, ...(message ? { message } : {}) };
+    if (JSON.stringify(payload).length > 50000) throw new InputError('This journal conversation is too large. Start a new entry to continue.');
+    await consumeQuota(res.locals.uid);
+    let result;
+    try { result = await runAI('journal', payload, []); }
+    catch { throw new ApiError(502, 'Gemini could not reflect on this entry. Your writing is still here; try again shortly.'); }
+    const now = new Date().toISOString();
+    const saved: JournalInteraction = previous
+      ? { ...previous, updatedAt: now, modelUsed: result.model, turns: [...turns, { role: 'user', text: message, timestamp: now }, { role: 'model', text: result.reply!, timestamp: now }] }
+      : { id, userId: res.locals.uid, title, prompt, response: result.reply!, mode: mode as ReflectionMode, modelUsed: result.model, createdAt: now, updatedAt: now, turns: [] };
+    await db().runTransaction(async tx => {
+      const current = await tx.get(ref);
+      if (previous && (!current.exists || current.data()?.updatedAt !== previous.updatedAt)) throw new ConflictError('This journal entry changed elsewhere. Reload it before continuing.');
+      if (!previous && current.exists) throw new ConflictError('This journal entry already exists.');
+      tx.set(ref, saved);
+    });
+    return res.json(saved);
   }));
   app.post('/api/ai', route(async (req, res) => {
     const body = object(req.body), action = body.action as AIAction;

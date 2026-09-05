@@ -55,3 +55,20 @@ test('provider errors do not disclose internal details', async () => {
     assert.equal((await response.text()).includes('secret-provider-diagnostic'), false);
   } finally { await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); }
 });
+test('journal entries are owner-scoped and support Gemini follow-up turns', async () => {
+  const store = memoryStore();
+  const app = createApp({ db: () => store.db, verifyToken: async () => ({ uid: 'alice' }), generate: async () => ({ reply: 'What would you like to understand better?', model: 'test-only' }) });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>(resolve => server.once('listening', resolve));
+  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/journal`;
+  const call = (body: unknown) => fetch(url, { method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  try {
+    assert.equal((await call({ id: 'page-one', title: 'A difficult week', entry: 'I kept avoiding one conversation.', mode: 'reflect' })).status, 200);
+    assert.ok(store.records.has('users/alice/interactions/page-one'));
+    assert.equal(store.records.has('users/bob/interactions/page-one'), false);
+    const response = await call({ id: 'page-one', message: 'I think I am worried about disappointing them.' });
+    assert.equal(response.status, 200);
+    const saved = await response.json() as { turns: unknown[] };
+    assert.equal(saved.turns.length, 2);
+  } finally { await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); }
+});
