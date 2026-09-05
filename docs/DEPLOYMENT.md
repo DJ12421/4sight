@@ -15,6 +15,7 @@
 | Request timeout | 60 seconds |
 | AI allowance | 5 requests/minute and 50/day per UID across instances |
 | Secret | `GEMINI_API_KEY`, a reviewed numeric Secret Manager version |
+| Browser configuration | Separate Firebase-only restricted `FIREBASE_WEB_API_KEY`, injected at runtime using its own Secret Manager binding |
 | Model | `gemini-3.6-flash`; verify access in the approved project |
 | Campaign label | `dev-tutorial=cloud-run-ai-challenge` |
 
@@ -23,7 +24,7 @@
 1. Confirm project billing, budget alerts, database location and the named database. Enable Cloud Run, Cloud Build, Artifact Registry, Secret Manager, Firestore and Identity Toolkit APIs as required. These affect infrastructure and cost.
 2. Use a dedicated runtime service account. Grant database read/write (`roles/datastore.user`) in the approved project, Firebase Auth read access (`roles/firebaseauth.viewer`) for revoked-token verification, and Secret Manager accessor **on the individual Gemini secret**. Do not grant Editor or Owner to the runtime. Administrative database privileges are why the application must enforce UID ownership independently.
 3. Give the deployment identity only the deployment/build/service-account-use permissions required by your organization's Cloud Run source deployment process. Source builds may require `roles/run.builder` on the approved build identity. Confirm these permissions against the actual organization policy rather than granting broad roles to make an error disappear.
-4. Create the Gemini secret or select its existing version through the approved Secret Manager process. Do not paste its value into a shell command, source file, screenshot or demo. Pin the numeric version in the deployment; Google's [Cloud Run secret guidance](https://cloud.google.com/run/docs/configuring/services/secrets) recommends pinning environment-injected secrets.
+4. Create/select separate Secret Manager bindings for `GEMINI_API_KEY` and `FIREBASE_WEB_API_KEY` and grant access on those individual secrets. The latter is public browser configuration, stored here to keep environment-specific values out of Git; it is not hidden from browser users. Restrict that key to Firebase-related APIs and exclude Generative Language API. Do not reuse the Gemini key. Pin numeric versions; Google's [Cloud Run secret guidance](https://cloud.google.com/run/docs/configuring/services/secrets) recommends pinning environment-injected secrets.
 5. Confirm that the Firebase web configuration, server environment and `firebase.json` all select the same project and **named Firestore database**. If moving projects, replace all three together before building. Never deploy default-database rules while expecting them to protect the named database.
 6. Configure Google as an enabled Firebase sign-in provider. Authorize `localhost` for local work, and authorize the generated Cloud Run hostname for the deployed app.
 
@@ -46,7 +47,7 @@ The rules preserve owner reads on the old interactions collection but retire cli
 Publish the source with the prepared script, substituting approved values:
 
 ```powershell
-.\scripts\deploy.ps1 -ProjectId YOUR_APPROVED_PROJECT -RuntimeServiceAccount foresight-runtime@YOUR_APPROVED_PROJECT.iam.gserviceaccount.com -SecretVersion 1
+.\scripts\deploy.ps1 -ProjectId YOUR_APPROVED_PROJECT -RuntimeServiceAccount foresight-runtime@YOUR_APPROVED_PROJECT.iam.gserviceaccount.com -SecretVersion 1 -FirebaseKeyVersion 1
 ```
 
 The script creates/updates a publicly reachable Cloud Run service, attaches the approved identity, binds the secret and applies the mandatory campaign label. It does not create secrets, grant roles, publish the repository, or post a submission. Public reachability is required for the web frontend; application API operations still require verified Firebase tokens.

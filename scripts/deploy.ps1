@@ -2,9 +2,11 @@ param(
   [Parameter(Mandatory = $true)][string]$ProjectId,
   [Parameter(Mandatory = $true)][string]$RuntimeServiceAccount,
   [Parameter(Mandatory = $true)][ValidatePattern('^\d+$')][string]$SecretVersion,
+  [Parameter(Mandatory = $true)][ValidatePattern('^\d+$')][string]$FirebaseKeyVersion,
   [string]$Region = 'us-central1',
   [string]$ServiceName = 'foresight',
   [string]$SecretName = 'GEMINI_API_KEY',
+  [string]$FirebaseKeySecretName = 'FIREBASE_WEB_API_KEY',
   [string]$Model = 'gemini-3.6-flash'
 )
 $ErrorActionPreference = 'Stop'
@@ -22,7 +24,7 @@ $deployArgs = @(
   '--source', $projectRoot,
   '--service-account', $RuntimeServiceAccount,
   '--allow-unauthenticated',
-  '--set-secrets', "GEMINI_API_KEY=${SecretName}:${SecretVersion}",
+  '--set-secrets', "GEMINI_API_KEY=${SecretName}:${SecretVersion},FIREBASE_WEB_API_KEY=${FirebaseKeySecretName}:${FirebaseKeyVersion}",
   '--set-env-vars', "NODE_ENV=production,GOOGLE_CLOUD_PROJECT=$ProjectId,FIRESTORE_DATABASE_ID=$($clientConfig.firestoreDatabaseId),GEMINI_MODEL=$Model",
   '--labels', 'dev-tutorial=cloud-run-ai-challenge',
   '--port', '8080',

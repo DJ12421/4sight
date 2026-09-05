@@ -16,6 +16,15 @@ type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Pro
 export function createApp(deps: Dependencies = {}) {
   const app = express();
   app.disable('x-powered-by');
+  // Public Firebase browser configuration, injected at runtime so no key is
+  // committed or baked into the image. This is never the Gemini API credential.
+  app.get('/firebase-config.js', (_req, res) => {
+    const key = process.env.FIREBASE_WEB_API_KEY || '';
+    const configured = key && key !== process.env.GEMINI_API_KEY;
+    res.status(configured ? 200 : 503).set({ 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' }).type('application/javascript').send(
+      `window.__FIREBASE_WEB_API_KEY__ = ${JSON.stringify(configured ? key : '')};`
+    );
+  });
   const db = deps.db || database;
   const verify = deps.verifyToken || ((token: string) => getAuth(adminApp()).verifyIdToken(token, true));
   const runAI = deps.generate || generate;

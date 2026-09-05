@@ -27,7 +27,7 @@ flowchart LR
   Secrets[Secret Manager] -->|Runtime secret binding| API
 ```
 
-The browser never receives the Gemini key. Firebase web configuration is public project configuration, not the Gemini credential. It does not authorize database access.
+The browser never receives the Gemini key. Firebase web configuration is public project configuration, not the Gemini credential. It does not authorize database access. The Firebase browser key is supplied through `FIREBASE_WEB_API_KEY` at runtime via `/firebase-config.js`, rather than committed to Git or baked into the image. It remains visible to browsers by design and must be restricted to Firebase APIs, excluding the Generative Language API. See [Firebase's API-key guidance](https://firebase.google.com/docs/projects/api-keys).
 
 The server derives the owner from a verified Firebase ID token; it ignores supplied owner IDs. The Admin SDK bypasses Firestore rules, so the backend separately constructs every path below the verified UID and validates every mutation. Client writes to decisions, insights, usage counters, and the legacy archive are denied by `firestore.rules`.
 
@@ -53,7 +53,7 @@ Default model: `gemini-3.6-flash`, configurable with `GEMINI_MODEL`. Its identif
 Use Node.js 22 and npm. `package-lock.json` is the authoritative dependency lock. The old Bun lock is superseded.
 
 1. Install dependencies with `npm ci` (on PowerShell, use `npm.cmd ci`).
-2. Copy `.env.example` to `.env` and set the server-only Gemini key.
+2. Copy `.env.example` to `.env` and set the server-only Gemini key plus a separate Firebase-only restricted `FIREBASE_WEB_API_KEY`. Never commit `.env`. Existing local configuration should be preserved rather than overwritten.
 3. Confirm that `firebase-applet-config.json`, `firebase.json`, `GOOGLE_CLOUD_PROJECT`, and `FIRESTORE_DATABASE_ID` refer to the same project and named database. The export uses a **named database**, not `(default)`.
 4. Enable Google sign-in in the approved Firebase project and authorize `localhost` plus the eventual Cloud Run domain. These are service changes and require approval.
 5. After approval, configure local Application Default Credentials using `gcloud auth application-default login`. The server needs database access and Firebase Auth user-read access for revoked-token checking. Never put a service-account JSON file in the repository.
@@ -64,7 +64,7 @@ Use Node.js 22 and npm. `package-lock.json` is the authoritative dependency lock
 
 ## API contract
 
-Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/api/health` is public and reports process liveness only, not database or AI readiness.
+Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/api/health` is public and reports process liveness only, not database or AI readiness. `/firebase-config.js` is also public and supplies only the Firebase browser key; a missing key or one equal to the server Gemini key produces an unconfigured response.
 
 | Method and path | Input / behavior |
 | --- | --- |
@@ -104,6 +104,8 @@ Complete the browser scenarios in [docs/VALIDATION.md](docs/VALIDATION.md), incl
 [AI Studio handoff](docs/AI_STUDIO.md) contains security instructions and feature prompts. Its evidence table is intentionally pending: local implementation does not prove that the feature was generated or integrated in AI Studio.
 
 [Submission kit](docs/SUBMISSION.md) contains the description, demo script, social draft, and eligibility checklist. Replace placeholders with real artifacts after validation. No public post or repository publication has been performed.
+
+[API-key alert remediation](docs/API_KEY_ALERT.md) explains why removing a key from current files does not revoke it or resolve alerts on old commits.
 
 ## Known limits
 
