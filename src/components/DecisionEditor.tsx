@@ -3,6 +3,7 @@ import ReactMarkdown from './Markdown';
 import { ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react';
 import { AIResult, Brief, Commitment, Decision, Review, localDate, parseCommitment, parseDraft, parseReview, sourceVersions } from '../domain';
 import { request, RequestError } from '../lib/workspace';
+import { syncDecisionToFirestore } from '../lib/storage';
 import { SourcePicker } from './SourcePicker';
 
 type Props = { initial: Decision; decisions: Decision[]; uid: string; onBack: () => void; onDirty: (value: boolean) => void; onSaved: (d: Decision) => void; onStartNext: (sourceIds: string[]) => void };
@@ -55,6 +56,7 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
       throw e;
     }
     if (!active()) throw new DOMException('Closed.', 'AbortError');
+    try { await syncDecisionToFirestore(uid, saved); } catch (err) { console.warn('Firestore sync notice:', err); }
     pending.current = null; setDecision(saved); onSaved(saved); setDirty(false); setNotice('Saved to your journal.');
     if (operation.operation === 'review') { setReview(blankReview()); setReviewDirty(false); }
     if (operation.operation === 'commit') { setPhase('review'); setCommitDirty(false); }
@@ -66,13 +68,13 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   async function persist(d: Decision, operation = 'draft', extra: Record<string, unknown> = {}) {
-    if (!pending.current) pending.current = { operation, body: { operation, revision: d.revision, mutationId: crypto.randomUUID(), ...(operation === 'draft' ? { draft: parseDraft(d) } : extra) } };
+    if (!pending.current) pending.current = { operation, body: { operation, revision: d.revision, mutationId: crypto.randomUUID(), sources: decisions.filter(item => d.sourceIds.includes(item.id)), ...(operation === 'draft' ? { draft: parseDraft(d) } : extra) } };
     return sendPending();
   }
   async function ask(action: 'chat' | 'brief') {
     parseDraft(decision);
     if (action === 'chat' && decision.turns.length > 38) throw new Error('This conversation is full. You can still edit the brief and record your decision.');
-    const result = await request<AIResult>(uid, '/api/ai', { action, draft: decision, message, sourceIds: decision.sourceIds, sourceVersions: sourceVersions(decision.sourceIds, decisions) }, controller.current.signal);
+    const result = await request<AIResult>(uid, '/api/ai', { action, draft: decision, message, sourceIds: decision.sourceIds, sourceVersions: sourceVersions(decision.sourceIds, decisions), sources: decisions.filter(d => decision.sourceIds.includes(d.id)) }, controller.current.signal);
     if (!active()) return;
     const next: Decision = action === 'brief' ? { ...decision, brief: result.brief! } : { ...decision, turns: [...decision.turns, { role: 'user', text: message.trim() }, { role: 'model', text: result.reply! }] };
     setDecision(next); setDirty(true);
@@ -131,7 +133,7 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
         <label>Did it meet your success criteria?<select value={review.result} onChange={e => { setReview(r => ({ ...r, result: e.target.value as Review['result'] })); setReviewDirty(true); }}><option value="met">Yes, met the criteria</option><option value="partly">Partly</option><option value="not-yet">Not yet</option></select></label>
         <label>What would you carry into your next decision?<textarea rows={3} maxLength={2000} required value={review.lesson} onChange={e => { setReview(r => ({ ...r, lesson: e.target.value, analysis: '', model: '' })); setReviewDirty(true); }} /></label>
         <button type="button" className="secondary" disabled={!review.outcome.trim()} onClick={() => perform('Comparing expectation and outcome…', async () => {
-          const result = await request<AIResult>(uid, '/api/ai', { action: 'review', decisionId: decision.id, outcome: review.outcome, lesson: review.lesson, sourceIds: [] }, controller.current.signal);
+          const result = await request<AIResult>(uid, '/api/ai', { action: 'review', decisionId: decision.id, draft: decision, outcome: review.outcome, lesson: review.lesson, sourceIds: [] }, controller.current.signal);
           if (active()) { setReview(r => ({ ...r, analysis: result.reply!, model: result.model })); setReviewDirty(true); }
         })}><Sparkles size={16} /> Help me reflect</button>
         <p className="small muted">Optional: shares this decision’s original situation, commitment, outcome, and lesson with Gemini.</p>

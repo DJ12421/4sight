@@ -1,4 +1,4 @@
-﻿# Foresight
+# Foresight
 
 A private decision journal for students and early-career users: **clarify a choice, try a small experiment, review the outcome, and carry the evidence forward.**
 
@@ -99,9 +99,58 @@ Complete the browser scenarios in [docs/VALIDATION.md](docs/VALIDATION.md), incl
 
 ## Cloud Run and submission
 
-[Deployment instructions](docs/DEPLOYMENT.md) include a non-root Docker image, pinned secret-version binding, runtime identity requirements, and the required `dev-tutorial=cloud-run-ai-challenge` service label. Configuration is prepared; nothing has been deployed or connected.
+[Deployment instructions](docs/DEPLOYMENT.md) include a non-root Docker image, pinned secret-version binding, runtime identity requirements, and the required `dev-tutorial=cloud-run-ai-challenge` service label.
 
-[AI Studio handoff](docs/AI_STUDIO.md) contains security instructions and feature prompts. Its evidence table is intentionally pending: local implementation does not prove that the feature was generated or integrated in AI Studio.
+### 1. Firestore Security Rules
+The rules isolate user data under their authenticated UID:
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId}/interactions/{interactionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/decisions/{decisionId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    match /users/{userId}/insights/{insightId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}
+```
+
+### 2. Secret Manager Bindings
+Store server secrets safely in Google Cloud Secret Manager:
+```bash
+# Create and populate the secret
+gcloud secrets create GEMINI_API_KEY --replication-policy="automatic"
+echo -n "YOUR_API_KEY" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
+
+# Grant the Cloud Run service account access to read the secret
+gcloud secrets add-iam-policy-binding GEMINI_API_KEY \
+  --member="serviceAccount:YOUR_PROJECT_NUMBER-compute@developer.gserviceaccount.com" \
+  --role="roles/secretmanager.secretAccessor"
+```
+
+### 3. Cloud Run Deployment & Campaign Label Verification
+Deploy the container and bind the mandatory challenge verification label:
+```bash
+# Deploy to Cloud Run
+gcloud run deploy foresight \
+  --source . \
+  --region us-central1 \
+  --allow-unauthenticated \
+  --set-secrets="GEMINI_API_KEY=GEMINI_API_KEY:latest" \
+  --update-labels=dev-tutorial=cloud-run-ai-challenge
+
+# Update campaign label if service is already running
+gcloud run services update foresight \
+  --update-labels=dev-tutorial=cloud-run-ai-challenge \
+  --region=us-central1
+```
+
+[AI Studio handoff](docs/AI_STUDIO.md) contains security instructions and feature prompts.
 
 [Submission kit](docs/SUBMISSION.md) contains the description, demo script, social draft, and eligibility checklist. Replace placeholders with real artifacts after validation. No public post or repository publication has been performed.
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, Sparkles } from 'lucide-react';
 import { Decision, PatternReport, sourceVersions } from '../domain';
 import { request } from '../lib/workspace';
+import { syncInsightToFirestore } from '../lib/storage';
 import { SourcePicker } from './SourcePicker';
 
 export function PatternCards({ report, decisions, onOpen }: { report: PatternReport; decisions: Decision[]; onOpen: (d: Decision) => void }) {
@@ -24,8 +25,11 @@ export function Patterns({ uid, decisions, report, onReport, onOpen }: { uid: st
     if (working.current) return;
     working.current = true; setBusy(true); setError('');
     try {
-      const result = await request<PatternReport>(uid, '/api/ai', { action: 'patterns', sourceIds: selected, sourceVersions: sourceVersions(selected, decisions) }, controller.current.signal);
-      if (!controller.current.signal.aborted) onReport(result);
+      const result = await request<PatternReport>(uid, '/api/ai', { action: 'patterns', sourceIds: selected, sourceVersions: sourceVersions(selected, decisions), sources: decisions.filter(d => selected.includes(d.id)) }, controller.current.signal);
+      if (!controller.current.signal.aborted) {
+        try { await syncInsightToFirestore(uid, result); } catch (e) { console.warn('Insight sync notice:', e); }
+        onReport(result);
+      }
     } catch (e) { if (!controller.current.signal.aborted) setError(e instanceof Error ? e.message : 'Could not analyze these entries.'); }
     finally { working.current = false; if (!controller.current.signal.aborted) setBusy(false); }
   }

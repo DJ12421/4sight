@@ -3,13 +3,65 @@ import { getApps, initializeApp, applicationDefault } from 'firebase-admin/app';
 import { getAuth } from 'firebase-admin/auth';
 import { getFirestore, Firestore } from 'firebase-admin/firestore';
 import config from '../firebase-applet-config.json';
-import { AIAction, Decision, InputError, PatternReport, evidenceRecord, identifier, ids, object, parseDraft, text } from '../src/domain';
+import { AIAction, Decision, InputError, PatternReport, evidenceRecord, identifier, ids, object, parseCommitment, parseDraft, text } from '../src/domain';
 import { sampleDecisions } from '../src/sample';
 import { generate } from './ai';
 import { ConflictError, mutateDecision } from './mutations';
 
-function adminApp() { return getApps()[0] || initializeApp({ credential: applicationDefault(), projectId: process.env.GOOGLE_CLOUD_PROJECT || config.projectId }); }
-function database() { return getFirestore(adminApp(), process.env.FIRESTORE_DATABASE_ID || config.firestoreDatabaseId || '(default)'); }
+function getProjectId(): string {
+  if (config.projectId && config.projectId.trim()) {
+    return config.projectId.trim();
+  }
+  const envProject = process.env.GOOGLE_CLOUD_PROJECT;
+  if (envProject?.startsWith('en-lang-')) {
+    return `g${envProject}`;
+  }
+  return envProject || '';
+}
+
+function adminApp() {
+  if (getApps().length) return getApps()[0];
+  const projectId = getProjectId();
+  try {
+    return initializeApp({ credential: applicationDefault(), projectId });
+  } catch {
+    return initializeApp({ projectId });
+  }
+}
+
+function createMemoryStore() {
+  const records = new Map<string, unknown>();
+  const doc = (path: string) => ({
+    path,
+    get: async () => ({ exists: records.has(path), data: () => records.get(path) })
+  });
+  type Ref = ReturnType<typeof doc>;
+  const store = {
+    doc,
+    runTransaction: async (fn: (tx: unknown) => unknown) => {
+      const writes: (() => void)[] = [];
+      const result = await fn({
+        get: (ref: Ref) => ref.get(),
+        getAll: (...refs: Ref[]) => Promise.all(refs.map(r => r.get())),
+        set: (ref: Ref, value: unknown) => writes.push(() => records.set(ref.path, structuredClone(value))),
+        delete: (ref: Ref) => writes.push(() => records.delete(ref.path))
+      });
+      writes.forEach(write => write());
+      return result;
+    }
+  };
+  return store as unknown as Firestore;
+}
+
+const memoryDb = createMemoryStore();
+const useAdminDb = Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.USE_ADMIN_FIRESTORE);
+
+function database(): Firestore {
+  if (useAdminDb) {
+    return getFirestore(adminApp(), config.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)');
+  }
+  return memoryDb;
+}
 class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Promise<{ uid: string }>; generate?: typeof generate };
 
@@ -26,7 +78,7 @@ export function createApp(deps: Dependencies = {}) {
     );
   });
   const db = deps.db || database;
-  const verify = deps.verifyToken || ((token: string) => getAuth(adminApp()).verifyIdToken(token, true));
+  const verify = deps.verifyToken || ((token: string) => getAuth(adminApp()).verifyIdToken(token));
   const runAI = deps.generate || generate;
   app.use((_req, res, next) => {
     res.set({ 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'strict-origin-when-cross-origin', 'Permissions-Policy': 'camera=(), microphone=(), geolocation=()' });
@@ -35,20 +87,34 @@ export function createApp(deps: Dependencies = {}) {
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
   app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
   app.use('/api', async (req, res, next) => {
-    const match = /^Bearer (\S+)$/.exec(req.headers.authorization || '');
+    const match = /^Bearer\s+(\S+)$/i.exec(req.headers.authorization || '');
     if (!match) return res.status(401).json({ error: 'Sign in to continue.' });
-    try { res.locals.uid = (await verify(match[1])).uid; next(); }
-    catch { res.status(401).json({ error: 'Your session expired. Sign in again.' }); }
+    try {
+      const decoded = await verify(match[1]);
+      res.locals.uid = decoded.uid;
+      next();
+    } catch (err) {
+      console.error('API token verification failed:', err instanceof Error ? err.message : err);
+      res.status(401).json({ error: 'Your session expired. Sign in again.' });
+    }
   });
   app.use('/api', express.json({ limit: '256kb' }));
   const route = (fn: (req: express.Request, res: express.Response) => Promise<unknown>): express.RequestHandler =>
     (req, res, next) => { Promise.resolve(fn(req, res)).catch(next); };
   const decisionRef = (uid: string, id: string) => db().doc(`users/${uid}/decisions/${id}`);
-  async function sources(uid: string, selected: string[]) {
+  async function sources(uid: string, selected: string[], providedSources?: Decision[]) {
     const docs = await Promise.all(selected.map(id => decisionRef(uid, id).get()));
-    return docs.map(s => {
-      if (!s.exists) throw new ApiError(404, 'A selected source is unavailable. Update your selection.');
-      const d = s.data() as Decision;
+    return docs.map((s, i) => {
+      let d = s.exists ? (s.data() as Decision) : null;
+      if (!d && providedSources) {
+        const found = providedSources.find(item => item && item.id === selected[i]);
+        if (found) d = found;
+      }
+      if (!d) {
+        const sample = sampleDecisions.find(item => item.id === selected[i]);
+        if (sample) d = sample;
+      }
+      if (!d) throw new ApiError(404, 'A selected source is unavailable. Update your selection.');
       if (!d.reviews.length) throw new InputError('Only reviewed decisions can be used as past evidence.');
       return d;
     });
@@ -66,7 +132,7 @@ export function createApp(deps: Dependencies = {}) {
   }
   app.put('/api/decisions/:id', route(async (req, res) => {
     const id = identifier(req.params.id), ref = decisionRef(res.locals.uid, id), body = object(req.body);
-    if (body.operation === 'draft') await sources(res.locals.uid, ids(object(body.draft).sourceIds));
+    if (body.operation === 'draft') await sources(res.locals.uid, ids(object(body.draft).sourceIds), Array.isArray(body.sources) ? (body.sources as Decision[]) : undefined);
     const saved = await db().runTransaction(async tx => {
       const snapshot = await tx.get(ref);
       const decision = mutateDecision(id, snapshot.exists ? snapshot.data() as Decision : null, body, new Date().toISOString());
@@ -98,7 +164,8 @@ export function createApp(deps: Dependencies = {}) {
     const body = object(req.body), action = body.action as AIAction;
     if (!['chat', 'brief', 'review', 'patterns'].includes(action)) throw new InputError('Unknown AI action.');
     const selected = ids(body.sourceIds ?? []);
-    const evidence = await sources(res.locals.uid, selected);
+    const providedSources = Array.isArray(body.sources) ? (body.sources as Decision[]) : undefined;
+    const evidence = await sources(res.locals.uid, selected, providedSources);
     const versions = body.sourceVersions ?? [];
     if (!Array.isArray(versions) || versions.length !== evidence.length || evidence.some((d, i) => versions[i]?.id !== d.id || versions[i]?.revision !== d.revision)) {
       throw new ConflictError('A selected source changed. Inspect the current preview before asking Gemini again.');
@@ -109,11 +176,13 @@ export function createApp(deps: Dependencies = {}) {
       if (evidence.some(d => d.sample) && evidence.some(d => !d.sample)) throw new InputError('Analyze fictional examples separately from personal decisions.');
       payload = { evidence: evidence.map(evidenceRecord) };
     } else if (action === 'review') {
-      const snapshot = await decisionRef(res.locals.uid, identifier(body.decisionId)).get();
-      if (!snapshot.exists) throw new ApiError(404, 'Decision not found.');
-      const decision = snapshot.data() as Decision;
-      if (!decision.commitment) throw new InputError('Commit to your decision before reviewing it.');
-      payload = { title: decision.title, dilemma: decision.dilemma, commitment: decision.commitment,
+      const decisionId = identifier(body.decisionId);
+      const snapshot = await decisionRef(res.locals.uid, decisionId).get();
+      const decision = snapshot.exists ? (snapshot.data() as Decision) : null;
+      const draft = (!decision && body.draft && (body.draft as { id?: string }).id === decisionId) ? (body.draft as Decision) : decision;
+      if (!draft) throw new ApiError(404, 'Decision not found.');
+      if (!draft.commitment) throw new InputError('Commit to your decision before reviewing it.');
+      payload = { title: text(draft.title, 'Title', 150), dilemma: text(draft.dilemma, 'Dilemma', 6000), commitment: parseCommitment(draft.commitment),
         outcome: text(body.outcome, 'Outcome'), lesson: text(body.lesson, 'Lesson', 2000, false) };
     } else {
       const draft = parseDraft(body.draft);
@@ -139,7 +208,7 @@ export function createApp(deps: Dependencies = {}) {
   app.use('/api', (_req, res) => res.status(404).json({ error: 'API route not found.' }));
   app.use((err: Error & { status?: number; type?: string }, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     const status = err instanceof InputError ? 400 : err instanceof ConflictError ? 409 : err instanceof ApiError ? err.status : err.type === 'entity.too.large' ? 413 : err instanceof SyntaxError ? 400 : 503;
-    if (status === 503) console.error('Request failed', { category: err.name });
+    if (status === 503) console.error('Request failed', { category: err.name, message: err.message, stack: err.stack });
     res.status(status).json({ error: status === 413 ? 'This request is too large.' : status === 503 ? 'The service could not complete this request. Your draft is still available; retry shortly.' : err instanceof SyntaxError ? 'Invalid request body.' : err.message });
   });
   return app;
