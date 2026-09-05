@@ -9,6 +9,8 @@ Implementation is present. Automated tests, builds, type checks, browser validat
 - A conversation with Gemini and an editable brief make options, priorities, constraints, assumptions, and unanswered questions visible.
 - A commitment records the choice, reasoning, expected outcome, confidence, experiment, success criteria, and review date. It cannot be overwritten after commitment.
 - Outcome reviews append observations and lessons alongside the original expectation. Optional Gemini analysis is labeled as interpretation.
+- A pre-commitment challenge asks Gemini for the strongest counterargument, weakest assumption, and evidence that should change the user's mind.
+- Confidence calibration compares recorded confidence with the latest reviewed outcomes after five personal decisions, while clearly labeling its scoring limits.
 - Pattern reflections cite at least two selected reviewed decisions. References are validated; changed or deleted sources invalidate the displayed report.
 - Past experience is opt-in. The preview shows the exact bounded representation shared: choice, expectation, experiment, and the last three outcome/lesson pairs. Up to 20 records can be selected.
 - A four-step fictional student journey demonstrates the loop without sign-in or an AI call. Copying the examples into a signed-in workspace is explicit and idempotent. Examples retain their labels and cannot be mixed with personal records for pattern analysis.
@@ -70,10 +72,10 @@ Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/ap
 | --- | --- |
 | `PUT /api/decisions/:id` | `{operation, revision, mutationId, draft? , commitment?, review?}`; operation is `draft`, `commit`, or `review`; returns saved `Decision` |
 | `DELETE /api/decisions/:id?revision=N` | Conditional deletion of the authenticated owner's decision |
-| `POST /api/ai` | `{action, sourceIds, sourceVersions?, draft?, message?, decisionId?, outcome?, lesson?}`; action is `chat`, `brief`, `review`, or `patterns`; selected sources require matching `{id, revision}` pairs so unseen edits are not silently sent |
+| `POST /api/ai` | `{action, sourceIds, sourceVersions?, draft?, message?, decisionId?, outcome?, lesson?}`; action is `chat`, `brief`, `challenge`, `review`, or `patterns`; selected sources require matching `{id, revision}` pairs so unseen edits are not silently sent |
 | `POST /api/sample` | Copies two fictional decisions using stable IDs without overwriting existing copies |
 
-Chat/brief AI actions return an `AIResult` and the client saves the resulting draft. Review AI returns an interpretation for the user to inspect before saving. Pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410 after authentication; old journal entries remain readable.
+Chat, challenge, and brief AI actions return an `AIResult`, and the client saves the resulting draft. Review AI returns an interpretation for the user to inspect before saving. Pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410 after authentication; old journal entries remain readable.
 
 ## Validation — prepared, not executed
 

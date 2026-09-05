@@ -31,6 +31,7 @@ test('review retries do not duplicate outcomes', () => {
 test('AI validation rejects malformed output and unsupported evidence', () => {
   assert.throws(() => parseAIResult({ brief: { options: ['one'] } }, 'brief', []));
   assert.throws(() => parseAIResult({ reply: '' }, 'chat', []));
+  assert.deepEqual(parseAIResult({ reply: 'Test the weakest assumption.' }, 'challenge', []), { reply: 'Test the weakest assumption.' });
   const observation = { observation: 'A possible pattern', evidence: 'Two recorded outcomes', question: 'What else could explain this?', sourceIds: ['one', 'foreign'] };
   assert.throws(() => parseAIResult({ insights: [observation] }, 'patterns', ['one', 'two']), /unsupported/);
   assert.throws(() => parseAIResult({ insights: [{ ...observation, sourceIds: ['one'] }] }, 'patterns', ['one']), /unsupported/);

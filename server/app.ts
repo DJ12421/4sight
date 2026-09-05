@@ -54,7 +54,7 @@ function createMemoryStore() {
 }
 
 const memoryDb = createMemoryStore();
-const useAdminDb = Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.USE_ADMIN_FIRESTORE);
+const useAdminDb = process.env.NODE_ENV === 'production' || Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.USE_ADMIN_FIRESTORE);
 
 function database(): Firestore {
   if (useAdminDb) {
@@ -162,7 +162,7 @@ export function createApp(deps: Dependencies = {}) {
   }));
   app.post('/api/ai', route(async (req, res) => {
     const body = object(req.body), action = body.action as AIAction;
-    if (!['chat', 'brief', 'review', 'patterns'].includes(action)) throw new InputError('Unknown AI action.');
+    if (!['chat', 'brief', 'challenge', 'review', 'patterns'].includes(action)) throw new InputError('Unknown AI action.');
     const selected = ids(body.sourceIds ?? []);
     const providedSources = Array.isArray(body.sources) ? (body.sources as Decision[]) : undefined;
     const evidence = await sources(res.locals.uid, selected, providedSources);

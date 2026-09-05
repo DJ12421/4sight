@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from './Markdown';
-import { ArrowLeft, ArrowRight, Check, Sparkles } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, ShieldQuestion, Sparkles } from 'lucide-react';
 import { AIResult, Brief, Commitment, Decision, Review, localDate, parseCommitment, parseDraft, parseReview, sourceVersions } from '../domain';
 import { request, RequestError } from '../lib/workspace';
 import { syncDecisionToFirestore } from '../lib/storage';
@@ -71,12 +71,16 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
     if (!pending.current) pending.current = { operation, body: { operation, revision: d.revision, mutationId: crypto.randomUUID(), sources: decisions.filter(item => d.sourceIds.includes(item.id)), ...(operation === 'draft' ? { draft: parseDraft(d) } : extra) } };
     return sendPending();
   }
-  async function ask(action: 'chat' | 'brief') {
+  async function ask(action: 'chat' | 'brief' | 'challenge') {
     parseDraft(decision);
-    if (action === 'chat' && decision.turns.length > 38) throw new Error('This conversation is full. You can still edit the brief and record your decision.');
-    const result = await request<AIResult>(uid, '/api/ai', { action, draft: decision, message, sourceIds: decision.sourceIds, sourceVersions: sourceVersions(decision.sourceIds, decisions), sources: decisions.filter(d => decision.sourceIds.includes(d.id)) }, controller.current.signal);
+    if ((action === 'chat' && decision.turns.length > 38) || (action === 'challenge' && decision.turns.length > 39)) throw new Error('This conversation is full. You can still edit the brief and record your decision.');
+    const result = await request<AIResult>(uid, '/api/ai', { action, draft: decision, message: action === 'challenge' ? '' : message, sourceIds: decision.sourceIds, sourceVersions: sourceVersions(decision.sourceIds, decisions), sources: decisions.filter(d => decision.sourceIds.includes(d.id)) }, controller.current.signal);
     if (!active()) return;
-    const next: Decision = action === 'brief' ? { ...decision, brief: result.brief! } : { ...decision, turns: [...decision.turns, { role: 'user', text: message.trim() }, { role: 'model', text: result.reply! }] };
+    const next: Decision = action === 'brief'
+      ? { ...decision, brief: result.brief! }
+      : action === 'challenge'
+        ? { ...decision, turns: [...decision.turns, { role: 'model', text: result.reply! }] }
+        : { ...decision, turns: [...decision.turns, { role: 'user', text: message.trim() }, { role: 'model', text: result.reply! }] };
     setDecision(next); setDirty(true);
     if (action === 'chat') setMessage('');
     await persist(next);
@@ -104,6 +108,7 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
           if (decision.brief.options.some(Boolean) && !window.confirm('Replace this brief with a new Gemini suggestion? Your conversation stays available.')) return;
           void perform('Drafting your brief…', () => ask('brief'));
         }}><Sparkles size={16} /> Draft brief with Gemini</button>}
+        {!decision.commitment && <div className="challenge-card"><div className="challenge-icon"><ShieldQuestion size={20} /></div><div><span className="eyebrow">Before you commit</span><h3>Pressure-test your thinking.</h3><p>Ask Gemini for the strongest counterargument, your weakest assumption, and what evidence should change your mind.</p><button type="button" className="secondary" disabled={locked || !decision.title.trim() || !decision.dilemma.trim()} onClick={() => perform('Pressure-testing your thinking…', () => ask('challenge'))}><ShieldQuestion size={16} /> Challenge my thinking</button></div></div>}
         <p className="small muted">{decision.commitment ? 'The brief as it stood when you committed.' : 'Edit every suggestion. You can also fill this in without AI.'}</p>
         <fieldset disabled={locked || !!decision.commitment}>
           {decision.brief.options.map((option, i) => <label key={i}>Option {String.fromCharCode(65 + i)}<input value={option} maxLength={300} onChange={e => updateBrief('options', decision.brief.options.map((v, index) => index === i ? e.target.value : v))} /></label>)}
