@@ -37,5 +37,7 @@ test('AI validation rejects malformed output and unsupported evidence', () => {
   assert.throws(() => parseAIResult({ insights: [{ ...observation, sourceIds: ['one'] }] }, 'patterns', ['one']), /unsupported/);
   assert.deepEqual(parseAIResult({ insights: [] }, 'patterns', ['one', 'two']), { insights: [] });
   assert.throws(() => parseDraft({ ...draft, sourceIds: ['../other-user'] }), /Invalid ID/);
+  assert.equal(parseDraft({ ...draft, journalId: 'journal-one' }).journalId, 'journal-one');
+  assert.throws(() => parseDraft({ ...draft, journalId: '../other-user' }), /Invalid ID/);
   assert.throws(() => parseReview({ ...draft.reviews[0], result: ['met'] }), /Choose an outcome/);
 });

@@ -35,6 +35,11 @@ function database(): Firestore {
 }
 class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Promise<{ uid: string }>; generate?: typeof generate };
+function journalTags(value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 8) throw new InputError('Add at most 8 tags.');
+  return [...new Set(value.map(item => text(item, 'Tag', 30).toLowerCase()))];
+}
 
 export function createApp(deps: Dependencies = {}) {
   const app = express();
@@ -144,6 +149,7 @@ export function createApp(deps: Dependencies = {}) {
     const title = previous ? text(previous.title, 'Title', 150) : text(body.title, 'Title', 150);
     const prompt = previous ? text(previous.prompt, 'Journal entry', 6000) : text(body.entry, 'Journal entry', 6000);
     const response = previous ? text(previous.response, 'Gemini reflection', 6000) : '';
+    const tags = previous?.tags || journalTags(body.tags);
     const payload = { mode, title, entry: prompt, initialReflection: response, turns, ...(message ? { message } : {}) };
     if (JSON.stringify(payload).length > 50000) throw new InputError('This journal conversation is too large. Start a new entry to continue.');
     await consumeQuota(res.locals.uid);
@@ -153,7 +159,7 @@ export function createApp(deps: Dependencies = {}) {
     const now = new Date().toISOString();
     const saved: JournalInteraction = previous
       ? { ...previous, updatedAt: now, modelUsed: result.model, turns: [...turns, { role: 'user', text: message, timestamp: now }, { role: 'model', text: result.reply!, timestamp: now }] }
-      : { id, userId: res.locals.uid, title, prompt, response: result.reply!, mode: mode as ReflectionMode, modelUsed: result.model, createdAt: now, updatedAt: now, turns: [] };
+      : { id, userId: res.locals.uid, title, prompt, response: result.reply!, mode: mode as ReflectionMode, modelUsed: result.model, createdAt: now, updatedAt: now, tags, turns: [] };
     await db().runTransaction(async tx => {
       const current = await tx.get(ref);
       if (previous && (!current.exists || current.data()?.updatedAt !== previous.updatedAt)) throw new ConflictError('This journal entry changed elsewhere. Reload it before continuing.');
@@ -161,6 +167,39 @@ export function createApp(deps: Dependencies = {}) {
       tx.set(ref, saved);
     });
     return res.json(saved);
+  }));
+  app.delete('/api/journal/:id', route(async (req, res) => {
+    const ref = db().doc(`users/${res.locals.uid}/interactions/${identifier(req.params.id)}`);
+    await db().runTransaction(async tx => tx.delete(ref));
+    return res.json({ success: true });
+  }));
+  app.put('/api/journal/:id/tags', route(async (req, res) => {
+    const ref = db().doc(`users/${res.locals.uid}/interactions/${identifier(req.params.id)}`), tags = journalTags(object(req.body).tags);
+    const saved = await db().runTransaction(async tx => {
+      const snapshot = await tx.get(ref);
+      if (!snapshot.exists) throw new ApiError(404, 'Journal entry not found.');
+      const entry = { ...snapshot.data() as JournalInteraction, tags, updatedAt: new Date().toISOString() };
+      tx.set(ref, entry); return entry;
+    });
+    return res.json(saved);
+  }));
+  app.get('/api/export', route(async (_req, res) => {
+    const root = `users/${res.locals.uid}`;
+    const [journal, decisions, insight] = await Promise.all([
+      db().collection(`${root}/interactions`).get(),
+      db().collection(`${root}/decisions`).get(),
+      db().doc(`${root}/insights/latest`).get(),
+    ]);
+    return res.json({
+      exportedAt: new Date().toISOString(),
+      journal: journal.docs.map(item => ({ ...item.data(), id: item.id })),
+      decisions: decisions.docs.map(item => ({ ...item.data(), id: item.id })),
+      insights: insight.exists ? insight.data() : null,
+    });
+  }));
+  app.delete('/api/account-data', route(async (_req, res) => {
+    await db().recursiveDelete(db().doc(`users/${res.locals.uid}`));
+    return res.json({ success: true });
   }));
   app.post('/api/ai', route(async (req, res) => {
     const body = object(req.body), action = body.action as AIAction;

@@ -16,6 +16,7 @@ export interface JournalInteraction {
   modelUsed?: string;
   createdAt: string;
   updatedAt: string;
+  tags?: string[];
   turns?: ChatTurn[];
 }
 

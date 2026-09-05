@@ -32,6 +32,7 @@ export interface Decision {
   brief: Brief;
   turns: Turn[];
   sourceIds: string[];
+  journalId?: string;
   commitment: Commitment | null;
   reviews: Review[];
   revision: number;
@@ -105,7 +106,7 @@ export function parseDraft(value: unknown) {
     if (t.role !== 'user' && t.role !== 'model') throw new InputError('Invalid conversation role.');
     return { role: t.role, text: text(t.text, 'Message', 6000) };
   });
-  return { title: text(d.title, 'Title', 150), dilemma: text(d.dilemma, 'Dilemma', 6000), brief: parseBrief(d.brief), turns, sourceIds: ids(d.sourceIds) };
+  return { title: text(d.title, 'Title', 150), dilemma: text(d.dilemma, 'Dilemma', 6000), brief: parseBrief(d.brief), turns, sourceIds: ids(d.sourceIds), ...(d.journalId === undefined ? {} : { journalId: identifier(d.journalId) }) };
 }
 export function parseCommitment(value: unknown): Omit<Commitment, 'committedAt'> {
   const c = object(value);

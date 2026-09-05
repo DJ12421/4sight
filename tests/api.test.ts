@@ -9,8 +9,9 @@ import { sampleDecisions } from '../src/sample';
 function memoryStore() {
   const records = new Map<string, unknown>();
   const doc = (path: string) => ({ path, get: async () => ({ exists: records.has(path), data: () => records.get(path) }) });
+  const collection = (path: string) => ({ get: async () => ({ docs: [...records.entries()].filter(([key]) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/')).map(([key, value]) => ({ id: key.slice(path.length + 1), data: () => value })) }) });
   type Ref = ReturnType<typeof doc>;
-  const db = { doc, runTransaction: async (fn: (tx: unknown) => unknown) => {
+  const db = { doc, collection, recursiveDelete: async (ref: Ref) => { for (const key of records.keys()) if (key === ref.path || key.startsWith(`${ref.path}/`)) records.delete(key); }, runTransaction: async (fn: (tx: unknown) => unknown) => {
     const writes: (() => void)[] = [];
     const result = await fn({ get: (ref: Ref) => ref.get(), getAll: (...refs: Ref[]) => Promise.all(refs.map(r => r.get())), set: (ref: Ref, value: unknown) => writes.push(() => records.set(ref.path, structuredClone(value))), delete: (ref: Ref) => writes.push(() => records.delete(ref.path)) });
     writes.forEach(write => write()); return result;
@@ -60,15 +61,26 @@ test('journal entries are owner-scoped and support Gemini follow-up turns', asyn
   const app = createApp({ db: () => store.db, verifyToken: async () => ({ uid: 'alice' }), generate: async () => ({ reply: 'What would you like to understand better?', model: 'test-only' }) });
   const server = app.listen(0, '127.0.0.1');
   await new Promise<void>(resolve => server.once('listening', resolve));
-  const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/api/journal`;
-  const call = (body: unknown) => fetch(url, { method: 'POST', headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`, url = `${base}/api/journal`;
+  const call = (body: unknown, endpoint = url, method = 'POST') => fetch(endpoint, { method, headers: { Authorization: 'Bearer test', 'Content-Type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
   try {
-    assert.equal((await call({ id: 'page-one', title: 'A difficult week', entry: 'I kept avoiding one conversation.', mode: 'reflect' })).status, 200);
+    assert.equal((await call({ id: 'page-one', title: 'A difficult week', entry: 'I kept avoiding one conversation.', mode: 'reflect', tags: ['Career', 'confidence'] })).status, 200);
     assert.ok(store.records.has('users/alice/interactions/page-one'));
     assert.equal(store.records.has('users/bob/interactions/page-one'), false);
     const response = await call({ id: 'page-one', message: 'I think I am worried about disappointing them.' });
     assert.equal(response.status, 200);
     const saved = await response.json() as { turns: unknown[] };
     assert.equal(saved.turns.length, 2);
+    assert.equal((await call({ tags: ['Updated'] }, `${url}/page-one/tags`, 'PUT')).status, 200);
+    const exported = await call(undefined, `${base}/api/export`, 'GET');
+    assert.equal(exported.status, 200);
+    assert.deepEqual(((await exported.json()) as { journal: { tags: string[] }[] }).journal[0].tags, ['updated']);
+    assert.equal((await call(undefined, `${url}/page-one`, 'DELETE')).status, 200);
+    assert.equal(store.records.has('users/alice/interactions/page-one'), false);
+    store.records.set('users/alice/interactions/another', { title: 'Private' });
+    store.records.set('users/bob/interactions/kept', { title: 'Someone else' });
+    assert.equal((await call(undefined, `${base}/api/account-data`, 'DELETE')).status, 200);
+    assert.equal([...store.records.keys()].some(key => key.startsWith('users/alice/')), false);
+    assert.equal(store.records.has('users/bob/interactions/kept'), true);
   } finally { await new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections(); }); }
 });

@@ -8,6 +8,9 @@ Implementation is present. Automated tests, builds, type checks, browser validat
 
 - A conversation with Gemini and an editable brief make options, priorities, constraints, assumptions, and unanswered questions visible.
 - A dedicated journal turns free-form writing into a private, mode-specific Gemini reflection. Users can continue the conversation or carry an entry into the decision workflow without retyping it; earlier Gemini Reflections entries remain available in the same timeline.
+- Journal search, tags, and a month calendar connect pages with decisions over time. Browser-native voice dictation remains editable before it is saved or shared with Gemini.
+- A dependency-free knowledge graph maps journal pages, decisions, tags, selected evidence, and Gemini pattern citations. Users can pan, zoom, search, filter, inspect, and open connected records.
+- Authenticated exports provide a readable Markdown journal or complete JSON data copy. Individual entries and all stored user data can be permanently deleted with explicit confirmation.
 - A commitment records the choice, reasoning, expected outcome, confidence, experiment, success criteria, and review date. It cannot be overwritten after commitment.
 - Outcome reviews append observations and lessons alongside the original expectation. Optional Gemini analysis is labeled as interpretation.
 - A pre-commitment challenge asks Gemini for the strongest counterargument, weakest assumption, and evidence that should change the user's mind.
@@ -31,7 +34,7 @@ flowchart LR
 
 The browser never receives the Gemini key. Firebase web configuration is public project configuration, not the Gemini credential. It does not authorize database access. The Firebase browser key is supplied through `FIREBASE_WEB_API_KEY` at runtime via `/firebase-config.js`, rather than committed to Git or baked into the image. It remains visible to browsers by design and must be restricted to Firebase APIs, excluding the Generative Language API. See [Firebase's API-key guidance](https://firebase.google.com/docs/projects/api-keys).
 
-The server derives the owner from a verified Firebase ID token; it ignores supplied owner IDs. The Admin SDK bypasses Firestore rules, so the backend separately constructs every path below the verified UID and validates every mutation. Client writes to decisions, insights, usage counters, and the legacy archive are denied by `firestore.rules`.
+The server derives the owner from a verified Firebase ID token; it ignores supplied owner IDs. The Admin SDK bypasses Firestore rules, so the backend separately constructs every path below the verified UID and validates every mutation. Client writes to decisions, insights, usage counters, and journal entries are denied by `firestore.rules`.
 
 Data paths:
 
@@ -45,6 +48,8 @@ Data paths:
 Decision writes use Firestore transactions. The client retains a stable decision ID and mutation ID for retries. A repeated acknowledged operation does not append another review. Revision conflicts preserve the browser draft and require reopening the current saved record; the app never silently overwrites a concurrent edit. Commitments cannot be edited, but deleting a decision removes its complete history after confirmation.
 
 Private drafts live only in component memory, not localStorage. Leaving an unsaved editor warns the user. Account changes unmount the workspace and abort outstanding requests; stale responses cannot be applied to another session. Losing a browser process before saving can still lose unsaved text.
+
+The journal shows the exact context sent for new Gemini reflections and follow-ups. Tags, unrelated records, account details, and microphone audio are excluded. Voice dictation uses the browser's speech-recognition service; only its editable text transcript becomes part of the journal entry.
 
 AI requests permit 5 attempts per UTC minute and 50 per UTC day per user, counted transactionally across Cloud Run instances. Failed provider attempts count too. Payloads are limited to 256 KB, AI context to 100,000 characters, conversations to 40 turns, and reviews to 20 per decision. Gemini transport timeout is 45 seconds; the browser request timeout is 65 seconds. Users can save briefs, commitments, and reviews without AI. There is no automatic retry ladder or model substitution.
 
@@ -74,6 +79,10 @@ Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/ap
 | `DELETE /api/decisions/:id?revision=N` | Conditional deletion of the authenticated owner's decision |
 | `POST /api/ai` | `{action, sourceIds, sourceVersions?, draft?, message?, decisionId?, outcome?, lesson?}`; action is `chat`, `brief`, `challenge`, `review`, or `patterns`; selected sources require matching `{id, revision}` pairs so unseen edits are not silently sent |
 | `POST /api/journal` | Creates an owner-scoped journal entry with a Gemini reflection, or appends a follow-up turn to an existing entry |
+| `PUT /api/journal/:id/tags` | Replaces the tags on an owned journal entry without sending content to Gemini |
+| `DELETE /api/journal/:id` | Permanently deletes one journal entry owned by the authenticated user |
+| `GET /api/export` | Returns all journal, decision, and pattern records under the authenticated UID |
+| `DELETE /api/account-data` | Recursively deletes all Firestore data under the authenticated UID; the Firebase sign-in account remains |
 | `POST /api/sample` | Copies two fictional decisions using stable IDs without overwriting existing copies |
 
 Chat, challenge, and brief AI actions return an `AIResult`, and the client saves the resulting draft. Review AI returns an interpretation for the user to inspect before saving. Pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410 after authentication; old journal entries remain readable.
