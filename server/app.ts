@@ -6,7 +6,7 @@ import config from '../firebase-applet-config.json';
 import { AIAction, Decision, InputError, PatternReport, evidenceRecord, identifier, ids, object, parseCommitment, parseDraft, text } from '../src/domain';
 import { sampleDecisions } from '../src/sample';
 import { JournalInteraction, ReflectionMode } from '../src/types';
-import { generate } from './ai';
+import { generate, isCreditsOrQuotaError } from './ai';
 import { ConflictError, mutateDecision } from './mutations';
 
 function getProjectId(): string {
@@ -208,13 +208,45 @@ export function createApp(deps: Dependencies = {}) {
     const payload = { mode, title, entry: prompt, initialReflection: response, turns, ...(message ? { message } : {}) };
     if (JSON.stringify(payload).length > 50000) throw new InputError('This journal conversation is too large. Start a new entry to continue.');
     await consumeQuota(res.locals.uid);
-    let result;
-    try { result = await runAI('journal', payload, []); }
-    catch { throw new ApiError(502, 'Gemini could not reflect on this entry. Your writing is still here; try again shortly.'); }
+    let result: { reply?: string; model?: string } | null = null;
+    let aiNotice = '';
+    try {
+      result = await runAI('journal', payload, []);
+    } catch (aiErr: unknown) {
+      if (aiErr instanceof ApiError || aiErr instanceof InputError || aiErr instanceof ConflictError) {
+        throw aiErr;
+      }
+      const isQuota = isCreditsOrQuotaError(aiErr);
+      aiNotice = isQuota
+        ? 'Gemini reflection is currently unavailable because API prepayment credits are depleted. Your journal entry has been safely saved.'
+        : 'Gemini reflection is temporarily unavailable. Your journal entry has been safely saved.';
+      console.warn('AI reflection unavailable for journal entry:', aiErr instanceof Error ? aiErr.message : aiErr);
+    }
     const now = new Date().toISOString();
+    const replyText = result?.reply || aiNotice;
+    const modelUsed = result?.model || 'none';
     const saved: JournalInteraction = previous
-      ? { ...previous, updatedAt: now, modelUsed: result.model, turns: [...turns, { role: 'user', text: message, timestamp: now }, { role: 'model', text: result.reply!, timestamp: now }] }
-      : { id, userId: res.locals.uid, title, prompt, response: result.reply!, mode: mode as ReflectionMode, modelUsed: result.model, createdAt: now, updatedAt: now, tags, turns: [] };
+      ? {
+          ...previous,
+          updatedAt: now,
+          modelUsed: result ? modelUsed : (previous.modelUsed || 'none'),
+          turns: message
+            ? [...turns, { role: 'user', text: message, timestamp: now }, { role: 'model', text: replyText, timestamp: now }]
+            : turns
+        }
+      : {
+          id,
+          userId: res.locals.uid,
+          title,
+          prompt,
+          response: replyText,
+          mode: mode as ReflectionMode,
+          modelUsed,
+          createdAt: now,
+          updatedAt: now,
+          tags,
+          turns: []
+        };
     await db().runTransaction(async tx => {
       const current = await tx.get(ref);
       if (previous && (!current.exists || current.data()?.updatedAt !== previous.updatedAt)) throw new ConflictError('This journal entry changed elsewhere. Reload it before continuing.');
@@ -321,8 +353,18 @@ export function createApp(deps: Dependencies = {}) {
     if (JSON.stringify(payload).length > 100000) throw new InputError('This context is too large. Select fewer past decisions or shorten the conversation.');
     await consumeQuota(res.locals.uid);
     let result;
-    try { result = await runAI(action, payload, selected); }
-    catch { throw new ApiError(502, 'Gemini could not return a valid answer. Your writing is safe. Try again, or continue without AI.'); }
+    try {
+      result = await runAI(action, payload, selected);
+    }
+    catch (aiErr: unknown) {
+      if (aiErr instanceof ApiError || aiErr instanceof InputError || aiErr instanceof ConflictError) {
+        throw aiErr;
+      }
+      if (isCreditsOrQuotaError(aiErr)) {
+        throw new ApiError(429, 'Your Gemini API prepayment credits are depleted or quota was reached. Please manage your project and billing in Google AI Studio. Your written draft and decisions are safe and can be continued manually.');
+      }
+      throw new ApiError(502, 'Gemini could not return a valid answer. Your writing is safe. Try again, or continue without AI.');
+    }
     if (action === 'patterns') {
       const report: PatternReport = { insights: result.insights || [], sources: evidence.map(d => ({ id: d.id, revision: d.revision })), model: result.model, createdAt: new Date().toISOString() };
       await db().runTransaction(async tx => {
