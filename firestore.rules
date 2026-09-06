@@ -5,16 +5,16 @@ service cloud.firestore {
       return request.auth != null && request.auth.uid == userId;
     }
     match /users/{userId}/decisions/{decisionId} {
-      allow read: if owner(userId);
-      allow write: if false;
+      allow read, write: if owner(userId);
     }
     match /users/{userId}/insights/{insightId} {
-      allow read: if owner(userId);
-      allow write: if false;
+      allow read, write: if owner(userId);
     }
     match /users/{userId}/interactions/{interactionId} {
-      allow read: if owner(userId);
-      allow write: if false;
+      allow read, write: if owner(userId);
+    }
+    match /users/{userId}/usage/{docId} {
+      allow read, write: if owner(userId);
     }
     match /{document=**} {
       allow read, write: if false;

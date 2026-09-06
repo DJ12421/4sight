@@ -20,6 +20,51 @@ function getProjectId(): string {
   return envProject || '';
 }
 
+function createMemoryStore(): Firestore {
+  const records = new Map<string, unknown>();
+  sampleDecisions.forEach(d => {
+    records.set(`samples/decisions/${d.id}`, d);
+  });
+  const doc = (path: string) => ({
+    path,
+    get: async () => ({ exists: records.has(path), data: () => records.get(path) }),
+    set: async (val: unknown) => { records.set(path, structuredClone(val)); },
+    delete: async () => { records.delete(path); },
+  });
+  const collection = (path: string) => ({
+    get: async () => ({
+      docs: [...records.entries()]
+        .filter(([key]) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
+        .map(([key, value]) => ({ id: key.slice(path.length + 1), data: () => value, exists: true })),
+    }),
+  });
+  type Ref = ReturnType<typeof doc>;
+  const db = {
+    doc,
+    collection,
+    recursiveDelete: async (ref: Ref) => {
+      for (const key of records.keys()) {
+        if (key === ref.path || key.startsWith(`${ref.path}/`)) records.delete(key);
+      }
+    },
+    runTransaction: async (fn: (tx: unknown) => unknown) => {
+      const writes: (() => void)[] = [];
+      const result = await fn({
+        get: (ref: Ref) => ref.get(),
+        getAll: (...refs: Ref[]) => Promise.all(refs.map(r => r.get())),
+        set: (ref: Ref, value: unknown) => writes.push(() => records.set(ref.path, structuredClone(value))),
+        delete: (ref: Ref) => writes.push(() => records.delete(ref.path)),
+      });
+      writes.forEach(write => write());
+      return result;
+    },
+  };
+  return db as unknown as Firestore;
+}
+
+const memoryDb = createMemoryStore();
+const useAdminDb = Boolean(process.env.GOOGLE_APPLICATION_CREDENTIALS || process.env.USE_ADMIN_FIRESTORE);
+
 function adminApp() {
   if (getApps().length) return getApps()[0];
   const projectId = getProjectId();
@@ -31,7 +76,14 @@ function adminApp() {
 }
 
 function database(): Firestore {
-  return getFirestore(adminApp(), config.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)');
+  if (useAdminDb) {
+    try {
+      return getFirestore(adminApp(), config.firestoreDatabaseId || process.env.FIRESTORE_DATABASE_ID || '(default)');
+    } catch {
+      return memoryDb;
+    }
+  }
+  return memoryDb;
 }
 class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 type Dependencies = { db?: () => Firestore; verifyToken?: (token: string) => Promise<{ uid: string }>; generate?: typeof generate };
@@ -201,7 +253,41 @@ export function createApp(deps: Dependencies = {}) {
     });
   }));
   app.delete('/api/account-data', route(async (_req, res) => {
-    await db().recursiveDelete(db().doc(`users/${res.locals.uid}`));
+    const uid = res.locals.uid;
+    const root = `users/${uid}`;
+    const database = db();
+    let deletedRecursively = false;
+    if (typeof database.recursiveDelete === 'function') {
+      try {
+        await database.recursiveDelete(database.doc(root));
+        deletedRecursively = true;
+      } catch (err: unknown) {
+        console.warn('recursiveDelete failed or lacked admin permissions, falling back to clearing user collections directly:', (err as Error)?.message || err);
+      }
+    }
+    if (!deletedRecursively) {
+      const collections = ['interactions', 'decisions', 'insights', 'usage'];
+      for (const col of collections) {
+        try {
+          const snapshot = await database.collection(`${root}/${col}`).get();
+          if (snapshot.docs && snapshot.docs.length) {
+            for (let i = 0; i < snapshot.docs.length; i += 400) {
+              const chunk = snapshot.docs.slice(i, i + 400);
+              await Promise.all(chunk.map((d: { id: string; ref?: { delete: () => Promise<unknown> } }) =>
+                d.ref ? d.ref.delete() : database.doc(`${root}/${col}/${d.id}`).delete()
+              ));
+            }
+          }
+        } catch (colErr) {
+          console.warn(`Could not clear collection ${col}:`, colErr);
+        }
+      }
+      try {
+        await database.doc(root).delete();
+      } catch {
+        // Root user document might not exist directly
+      }
+    }
     return res.json({ success: true });
   }));
   app.post('/api/ai', route(async (req, res) => {

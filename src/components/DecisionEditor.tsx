@@ -3,6 +3,7 @@ import ReactMarkdown from './Markdown';
 import { ArrowLeft, ArrowRight, Check, ShieldQuestion, Sparkles } from 'lucide-react';
 import { AIResult, Brief, Commitment, Decision, Review, localDate, parseCommitment, parseDraft, parseReview, sourceVersions } from '../domain';
 import { request, RequestError } from '../lib/workspace';
+import { syncDecisionToFirestore } from '../lib/storage';
 import { SourcePicker } from './SourcePicker';
 
 type Props = { initial: Decision; decisions: Decision[]; uid: string; onBack: () => void; onDirty: (value: boolean) => void; onSaved: (d: Decision) => void; onStartNext: (sourceIds: string[]) => void };
@@ -56,6 +57,7 @@ export function DecisionEditor({ initial, decisions, uid, onBack, onDirty, onSav
     }
     if (!active()) throw new DOMException('Closed.', 'AbortError');
     pending.current = null; setDecision(saved); onSaved(saved); setDirty(false); setNotice('Saved to your journal.');
+    void syncDecisionToFirestore(uid, saved);
     if (operation.operation === 'review') { setReview(blankReview()); setReviewDirty(false); }
     if (operation.operation === 'commit') { setPhase('review'); setCommitDirty(false); }
     return saved;
