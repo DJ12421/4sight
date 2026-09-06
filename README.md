@@ -1,11 +1,12 @@
 # Foresight
 
-A private decision journal for students and early-career users: **clarify a choice, try a small experiment, review the outcome, and carry the evidence forward.**
+A private Gemini journal for students and early-career users: **write, reflect, connect ideas, turn insight into a small experiment, and learn from the outcome.**
 
 Implementation is present. Automated tests, builds, type checks, browser validation, live service configuration, and deployment have **not** been completed as part of this implementation. Do not represent the app as production-validated until the checks below have been run.
 
 ## The product
 
+- A signed-in Home page opens on the user's latest journal thread, offers direct paths into writing, decisions, the graph and patterns, and summarizes current pages, experiments, reviews and explicit connections.
 - A conversation with Gemini and an editable brief make options, priorities, constraints, assumptions, and unanswered questions visible.
 - A dedicated journal turns free-form writing into a private, mode-specific Gemini reflection. Users can continue the conversation or carry an entry into the decision workflow without retyping it; earlier Gemini Reflections entries remain available in the same timeline.
 - Journal search, tags, and a month calendar connect pages with decisions over time. Browser-native voice dictation remains editable before it is saved or shared with Gemini.
@@ -23,7 +24,7 @@ Implementation is present. Automated tests, builds, type checks, browser validat
 
 ```mermaid
 flowchart LR
-  Browser[React decision journal] -->|Google sign-in| Auth[Firebase Authentication]
+  Browser[React Gemini journal] -->|Google sign-in| Auth[Firebase Authentication]
   Browser -->|Owner-only read subscriptions| Firestore[(Cloud Firestore)]
   Browser -->|Bearer ID token + bounded input| API[Express on Cloud Run]
   API -->|Verify token and revocation| Auth
@@ -40,10 +41,12 @@ Data paths:
 
 | Path below `/users/{uid}` | Purpose |
 | --- | --- |
-| `decisions/{id}` | Brief, conversation, immutable commitment, append-only reviews, revision and retry ID |
+| `decisions/{id}` | Brief, conversation, optional journal origin, immutable commitment, append-only reviews, revision and retry ID |
 | `insights/latest` | Latest generated interpretation, source IDs and source revisions |
 | `usage/current` | Server-only minute/day quota counters |
-| `interactions/{id}` | Journal entry, Gemini reflection, and follow-up conversation |
+| `interactions/{id}` | Journal entry, tags, Gemini reflection, and follow-up conversation |
+
+The Graph tab is derived in the browser from records the owner has already loaded; it creates no additional database documents and makes no Gemini request. It draws only explicit links: journal-to-tag, journal-to-derived-decision, decision-to-selected-evidence, and pattern-to-cited-decision. To keep layout work bounded, it maps up to 80 recent journal pages, 80 recent decisions, and the 60 most-used tags, and labels the view when records are truncated.
 
 Decision writes use Firestore transactions. The client retains a stable decision ID and mutation ID for retries. A repeated acknowledged operation does not append another review. Revision conflicts preserve the browser draft and require reopening the current saved record; the app never silently overwrites a concurrent edit. Commitments cannot be edited, but deleting a decision removes its complete history after confirmation.
 
@@ -51,7 +54,7 @@ Private drafts live only in component memory, not localStorage. Leaving an unsav
 
 The journal shows the exact context sent for new Gemini reflections and follow-ups. Tags, unrelated records, account details, and microphone audio are excluded. Voice dictation uses the browser's speech-recognition service; only its editable text transcript becomes part of the journal entry.
 
-AI requests permit 5 attempts per UTC minute and 50 per UTC day per user, counted transactionally across Cloud Run instances. Failed provider attempts count too. Payloads are limited to 256 KB, AI context to 100,000 characters, conversations to 40 turns, and reviews to 20 per decision. Gemini transport timeout is 45 seconds; the browser request timeout is 65 seconds. Users can save briefs, commitments, and reviews without AI. There is no automatic retry ladder or model substitution.
+AI requests permit 5 attempts per UTC minute and 50 per UTC day per user, counted transactionally across Cloud Run instances. Failed provider attempts count too. Payloads are limited to 256 KB, AI context to 100,000 characters, conversations to 40 turns, and reviews to 20 per decision. Gemini transport timeout is 45 seconds; the browser request timeout is 65 seconds. Users can save briefs, commitments, and reviews without AI. Recoverable provider failures use the bounded fallback model list in `server/ai.ts`; non-recoverable failures stop immediately.
 
 Default model: `gemini-3.6-flash`, configurable with `GEMINI_MODEL`. Its identifier is documented in Google's [model catalog](https://ai.google.dev/gemini-api/docs/models). Project-level availability and quota still need a live check. Structured output is independently validated after generation; prompt instructions alone are not a security boundary. See [structured output guidance](https://ai.google.dev/gemini-api/docs/structured-output) and [Firebase ID-token verification](https://firebase.google.com/docs/auth/admin/verify-id-tokens).
 
@@ -85,7 +88,7 @@ Every operation below requires `Authorization: Bearer <Firebase ID token>`. `/ap
 | `DELETE /api/account-data` | Recursively deletes all Firestore data under the authenticated UID; the Firebase sign-in account remains |
 | `POST /api/sample` | Copies two fictional decisions using stable IDs without overwriting existing copies |
 
-Chat, challenge, and brief AI actions return an `AIResult`, and the client saves the resulting draft. Review AI returns an interpretation for the user to inspect before saving. Pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410 after authentication; old journal entries remain readable.
+Chat, challenge, journal, and brief AI actions return validated structured output. The server saves new journal reflections and follow-up turns; the decision client saves generated conversation or brief changes through the decision mutation route. Review AI returns an interpretation for the user to inspect before saving, while pattern AI saves and returns a `PatternReport`. Schemas and limits live in `src/domain.ts`. The old `/api/reflect` endpoint is retired with HTTP 410; preserved entries are served through the current Journal workspace.
 
 ## Validation — prepared, not executed
 
@@ -97,7 +100,7 @@ npm.cmd run typecheck
 npm.cmd run build
 ```
 
-The Node tests cover invalid/missing authentication, owner-scoped API paths, quota enforcement, safe provider errors, structured output validation, immutable commitments, stale revision rejection, and retry idempotency. Their in-memory transaction harness is not a substitute for real database testing.
+The Node tests cover invalid/missing authentication, owner-scoped API paths, journal creation and follow-ups, tag updates, export and deletion isolation, quota enforcement, safe provider errors, structured output validation, immutable commitments, stale revision rejection, retry idempotency, journal-origin validation, and factual graph construction. Their in-memory transaction harness is not a substitute for real database testing.
 
 For actual security-rules checks, install/use the Firebase CLI and Java as required by the emulator, then run:
 
@@ -107,7 +110,7 @@ firebase emulators:exec --only firestore --project demo-foresight --config fireb
 
 The rule test refuses non-loopback emulator hosts. It checks owner reads, foreign and unauthenticated rejection, list isolation, and blocked client writes. It uses an isolated demo project's default emulator database; deployment must separately target the exported named database.
 
-Complete the browser scenarios in [docs/VALIDATION.md](docs/VALIDATION.md), including account switching while a generation is pending, lost acknowledgements, reload persistence, source deletion, and 320/390 px layouts. Only then record verified results and known failures.
+Complete the browser scenarios in [docs/VALIDATION.md](docs/VALIDATION.md), including journaling, voice permission outcomes, graph interaction, exports, destructive deletion, account switching during generation, reload persistence, and 320/390 px layouts. Only then record verified results and known failures.
 
 ## Cloud Run and submission
 
@@ -176,5 +179,8 @@ gcloud run services update foresight \
 - Pattern interpretations can still be wrong even when source IDs are valid. They are hypotheses, not proven traits or causal claims.
 - Quotas reduce per-account AI spend; they are not a complete defense against many-account abuse. Cloud Run instance limits and project budgets belong in the approved deployment setup.
 - The dashboard initially loads 200 recent decisions; use “Load older decisions” before selecting older records elsewhere. Deleted or not-yet-loaded report sources cause the report to be hidden until current evidence is available.
+- The graph is a force-directed snapshot of recently loaded records, not a semantic similarity engine. It animates into place, supports canvas pan/zoom and node inspection, and lets users reposition individual nodes by dragging or with the arrow keys. Reduced-motion preferences receive the settled layout without animation.
+- Voice dictation depends on browser speech-recognition support and microphone permission. Audio may be processed by the browser vendor's speech service; Foresight receives only the transcript.
+- “Delete all stored data” recursively removes Firestore records but deliberately preserves the Firebase Authentication account. This operation is irreversible.
 - No automatic notifications, attachments, collaboration, background jobs, offline persistence, or vector database.
 - App usability, service IAM, model access, deployment, and organizer acceptance of the combined AI Studio/local workflow remain to be verified.

@@ -119,12 +119,15 @@ export function createApp(deps: Dependencies = {}) {
   }));
   app.delete('/api/decisions/:id', route(async (req, res) => {
     const id = identifier(req.params.id), ref = decisionRef(res.locals.uid, id);
+    const expectedRevision = Number(req.query.revision);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 0) throw new InputError('A valid decision revision is required. Reload and try again.');
     const reportRef = db().doc(`users/${res.locals.uid}/insights/latest`);
     await db().runTransaction(async tx => {
       const [snapshot, report] = await tx.getAll(ref, reportRef);
-      if (snapshot.exists && snapshot.data()?.revision !== Number(req.query.revision)) throw new ConflictError('This decision changed elsewhere. Reopen it before deleting.');
+      if (snapshot.exists && Number(snapshot.data()?.revision ?? 0) !== expectedRevision) throw new ConflictError('This decision changed elsewhere. Reopen it before deleting.');
       tx.delete(ref);
-      if ((report.data() as PatternReport | undefined)?.sources.some(source => source.id === id)) tx.delete(reportRef);
+      const reportSources = (report.data() as Partial<PatternReport> | undefined)?.sources;
+      if (Array.isArray(reportSources) && reportSources.some(source => source.id === id)) tx.delete(reportRef);
     });
     return res.json({ success: true });
   }));

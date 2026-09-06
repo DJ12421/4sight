@@ -6,27 +6,27 @@ Draft materials. Replace placeholders and verify behavior before publishing. Not
 
 Foresight is a private Gemini journal that helps students and early-career users turn reflection into action. Users can type or dictate an editable entry, organize it with tags and a calendar, choose whether Gemini should reflect, summarize, or brainstorm, and continue the conversation across multiple turns. A visual knowledge graph maps explicit connections among journal pages, decisions, tags, selected evidence, and Gemini pattern citations. When a reflection reveals a choice, users can carry it directly into a decision workflow: clarify options, record an expectation and a small experiment, return to the actual outcome, and apply that experience to the next choice. The interface explains exactly what is sent to Gemini and provides authenticated export and deletion controls. Original commitments stay intact, making hindsight visible.
 
-Firebase Authentication signs users in with Google and gives the backend a verified identity for every API request. Cloud Firestore stores each user's private decision history, multi-turn conversation, reviews, and source-linked reflections under that user's isolated document path. Gemini powers the multi-turn decision conversation, structured briefs, outcome reviews, and evidence-linked pattern reflections. Google Cloud Run hosts the frontend and authenticated Express API; the server reads the Gemini API key at runtime from a Secret Manager binding, so the credential is never shipped to the browser or committed to source. A fictional student journey demonstrates the complete loop without pretending example data is a live result.
+Firebase Authentication signs users in with Google and gives the backend a verified identity for every API request. Cloud Firestore stores each user's journal pages, tags, conversations, decisions, reviews, pattern reports and quota record under that user's isolated document path. Gemini powers mode-specific journal reflections, multi-turn journal and decision conversations, structured briefs, outcome reviews, and evidence-linked pattern reflections. Google Cloud Run hosts the frontend and authenticated Express API; the server receives the Gemini API key through a Secret Manager runtime binding, so the credential is never shipped to the browser or committed to source. The knowledge graph is computed locally from the user's loaded records and sends nothing to Gemini. A fictional student journey demonstrates the complete decision loop without presenting example data as a live result.
 
 Deployment sentence above describes the intended deployed architecture. Do not submit it as a completed deployment claim until the live service has been validated.
 
 ## A three-minute walkthrough
 
-1. **0:00–0:20 — The problem.** “We often remember decisions differently after knowing the outcome. What if we preserved what we expected and learned from the difference?” Show the landing notebook.
-2. **0:20–0:50 — Clarify.** Sign in. Describe a real test dilemma: choose a narrowly scoped campus project or an ambitious social app. Discuss the tradeoff, generate the brief and edit an assumption. Say explicitly when an AI call is live.
-3. **0:50–1:20 — Commit.** Choose the room finder. Set a five-student usability experiment, 70% confidence, and a review date. Show that the saved commitment is preserved.
-4. **1:20–1:50 — Review.** Either enter a clearly labeled test outcome or switch to the fictional walkthrough and identify it as such. Compare five successful searches to the original criterion. Show the student's observation separately from Gemini's interpretation.
-5. **1:50–2:25 — Apply.** Open the internship decision from the fictional sample. Show the checked past source, exact context preview and the question it informs. Open a pattern's evidence link. Explain that the AI identifies a hypothesis, not causation.
-6. **2:25–2:50 — Trust.** Show collected cross-user-denial evidence and explain server-only secrets, owner-scoped paths, stable retries and immutable commitments. Only show tests actually run.
-7. **2:50–3:00 — Close.** “The output is not just advice. It's a record of what I expected, what happened, and what I can try next.” Display repository and deployed demo links.
+1. **0:00–0:20 — The problem.** “Thoughts disappear, and decisions look obvious after we know the outcome. What if a journal could preserve both and help us learn?” Show the landing notebook.
+2. **0:20–0:50 — Journal.** Sign in, dictate or type a non-sensitive example entry, add tags, choose a reflection mode, and show the disclosure of exactly what Gemini receives. Say explicitly when the live AI call begins.
+3. **0:50–1:15 — Continue and act.** Ask one follow-up question, then use “Turn this into a decision.” Show that the journal origin is retained without sending unrelated pages.
+4. **1:15–1:45 — Decide and review.** Generate an editable brief, record a confidence estimate and small experiment, then use a clearly labeled fictional outcome to show the original commitment beside the later review.
+5. **1:45–2:15 — Connect.** Open the Graph tab. Show the journal, tag, decision and Gemini-pattern nodes settle into place; drag one node, inspect an explicit connection, and open its source. Explain that the physics changes only the layout—the graph invents no semantic links.
+6. **2:15–2:40 — Trust and ownership.** Show the Gemini context disclosure and export controls. Explain verified Firebase identity, UID-scoped Firestore paths, browser-read-only rules, server-side Gemini, Secret Manager binding, and confirmation-protected deletion. Only show tests actually run.
+7. **2:40–3:00 — Close.** “Foresight turns private reflection into a record of what I thought, what I tried, what happened, and what I can carry forward.” Display repository and verified demo links.
 
 ## Social post draft
 
-I built Foresight for the Gen AI Academy APAC Cohort 3 Ideathon: a decision journal that helps students turn choices into small experiments and learn from their outcomes.
+I built Foresight for the Gen AI Academy APAC Cohort 3 Ideathon: a private Gemini journal that helps students turn reflection into evidence-backed action.
 
-Clarify a decision → record an expectation → review what happened → bring that evidence into the next choice.
+Write or dictate → reflect with Gemini → connect ideas in a knowledge graph → test a decision → learn from what happened.
 
-Built with Gemini, Firebase Authentication, Cloud Firestore, Cloud Run and Secret Manager. AI interpretations link back to selected journal evidence, and the original commitment stays intact.
+Built with Gemini, Firebase Authentication, Cloud Firestore, Cloud Run and Secret Manager. Multi-turn reflections remain user-isolated, the graph uses explicit stored links, and AI interpretations stay connected to their evidence.
 
 Demo: [ADD VERIFIED WALKTHROUGH LINK]
 Source: [ADD REPOSITORY LINK]

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { buildGraph } from '../src/components/GraphView';
+import { advanceGraphLayout, buildGraph } from '../src/components/GraphView';
 import { Decision, PatternReport } from '../src/domain';
 import { JournalInteraction } from '../src/types';
 
@@ -18,4 +18,8 @@ test('knowledge graph uses only explicit journal, tag, decision, and pattern lin
   assert.deepEqual(new Set(graph.nodes.map(node => node.kind)), new Set(['journal', 'decision', 'tag', 'pattern']));
   assert.deepEqual(new Set(graph.edges.map(edge => edge.kind)), new Set(['tag', 'origin', 'evidence', 'pattern']));
   assert.ok(graph.nodes.every(node => Number.isFinite(node.x) && Number.isFinite(node.y) && node.x >= 34 && node.x <= 966 && node.y >= 34 && node.y <= 586));
+  const nodes = graph.nodes.map(node => ({ ...node })), pinned = nodes[0], pinnedAt = { x: pinned.x, y: pinned.y };
+  const movement = advanceGraphLayout(nodes, graph.edges, new Map(), pinned.id);
+  assert.deepEqual({ x: pinned.x, y: pinned.y }, pinnedAt);
+  assert.ok(Number.isFinite(movement) && nodes.every(node => node.x >= 34 && node.x <= 966 && node.y >= 34 && node.y <= 586));
 });

@@ -1,11 +1,23 @@
 ﻿{
   "name": "Foresight",
-  "description": "Private decisions with immutable commitments, append-only outcome reviews and evidence-linked AI interpretations.",
+  "description": "A private Gemini journal for reflection, connected decisions, outcome learning and a factual personal knowledge graph.",
   "sourceOfTruth": "src/domain.ts",
   "firestore": {
-    "/users/{uid}/decisions/{id}": { "type": "Decision", "client": "owner read only", "writes": "authenticated server transactions" },
+    "/users/{uid}/decisions/{id}": { "type": "Decision", "client": "owner read only", "writes": "authenticated server transactions", "links": "optional journalId and selected evidence IDs" },
     "/users/{uid}/insights/latest": { "type": "PatternReport", "client": "owner read only", "writes": "server, after validating source revisions" },
     "/users/{uid}/usage/current": { "client": "denied", "writes": "server quota transaction" },
-    "/users/{uid}/interactions/{id}": { "type": "JournalInteraction", "client": "owner read only", "writes": "retired legacy archive" }
+    "/users/{uid}/interactions/{id}": { "type": "JournalInteraction", "client": "owner read only", "writes": "authenticated server journal routes", "fields": "prompt, response, mode, tags and multi-turn history" }
+  },
+  "derivedViews": {
+    "knowledgeGraph": {
+      "storage": "none; derived in the browser from owner-readable records",
+      "modelCalls": "none",
+      "relationships": ["journal-to-tag", "journal-to-decision", "decision-to-evidence", "pattern-to-decision"]
+    }
+  },
+  "privacyOperations": {
+    "export": "authenticated Markdown or JSON generation scoped to the verified UID",
+    "deleteOneJournalPage": "authenticated owner-scoped server deletion",
+    "deleteAllStoredData": "authenticated recursive deletion under /users/{uid}; Firebase Authentication account is preserved"
   }
 }

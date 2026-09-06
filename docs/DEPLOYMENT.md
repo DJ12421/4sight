@@ -42,7 +42,7 @@ Deploy the security rules using the explicit project:
 firebase deploy --only firestore:rules --project YOUR_APPROVED_PROJECT --config firebase.json
 ```
 
-The rules preserve owner reads on the old interactions collection but retire client writes. Old deployed journal clients will no longer be able to write after these rules are applied; coordinate replacement of that client during rollout. No document migration is needed.
+The rules preserve owner reads for journal entries in the interactions collection while denying direct browser writes. The current Journal uses authenticated server routes for create, tag and delete operations, so deploy the compatible Cloud Run revision and rules as one coordinated rollout. Older clients that attempted direct Firestore writes will stop saving after these rules are applied. No document migration is needed.
 
 Publish the source with the prepared script, substituting approved values:
 
@@ -56,7 +56,12 @@ The script creates/updates a publicly reachable Cloud Run service, attaches the 
 
 - Capture the URL, revision, campaign label and runtime identity from the script's service description output.
 - Add the exact service hostname to Firebase authorized domains and verify Google sign-in.
-- Complete a save/reload/review loop on the named database with two separate accounts.
+- With two separate accounts, create and reload journal pages, edit tags, continue a multi-turn reflection, turn a page into a decision, and complete an outcome review.
+- Confirm search, tag filters and the calendar find the expected journal pages without crossing account boundaries.
+- Confirm the graph shows only stored journal-to-tag, journal-to-decision, decision-to-evidence and pattern-to-decision links. Exercise animated settling, pointer dragging, arrow-key movement, search, type filters, pan, zoom and the mobile inspector, including reduced-motion mode.
+- Test voice capture on the deployed HTTPS origin in a supported browser, including denied and unavailable microphone paths. Speech recognition is a browser capability and may send audio to the browser vendor; audio is not sent to Cloud Run or stored by Foresight.
+- Download Markdown and JSON exports from a synthetic-data account and inspect their ownership and contents.
+- Delete one journal page, then use **Delete all stored data** only on a disposable account. Confirm its Firestore data is removed recursively, its Firebase Authentication account still exists, and another account is unchanged.
 - Verify both cross-user denial paths, backend token rejection and sample-copy behavior.
 - Check safe errors for an unavailable model and a quota limit. The public health endpoint is liveness only.
 - Observe Cloud Run errors/latency, instance count, Gemini quota and billing. Logs should contain no prompts, responses, tokens or keys.
@@ -64,4 +69,4 @@ The script creates/updates a publicly reachable Cloud Run service, attaches the 
 
 ## Rollback
 
-Keep the previous Cloud Run revision reference before changing traffic. A traffic rollback requires approval and should target a compatible Foresight revision. Rolling back to the starter journal also requires reviewing rule compatibility because client writes to the legacy collection are now denied. Do not broadly reopen rules as a shortcut. New decision data does not require deletion for rollback.
+Keep the previous Cloud Run revision reference before changing traffic. A traffic rollback requires approval and should target a Foresight revision compatible with the deployed rules. Any older journal client that writes directly to Firestore requires a rule-compatibility review because direct client writes to interactions are denied. Do not broadly reopen rules as a shortcut. Journal, decision and graph-source data do not require deletion for rollback.

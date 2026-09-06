@@ -39,6 +39,13 @@ test('API rejects missing/invalid auth, scopes reads/writes, and enforces usage 
     assert.ok(store.records.has('users/alice/decisions/new'));
     assert.equal(store.records.has('users/bob/decisions/new'), false);
     assert.equal((store.records.get('users/alice/decisions/new') as { revision: number }).revision, 1);
+    assert.equal((await call('/api/decisions/new?revision=0', undefined, 'alice-token', 'DELETE')).status, 409);
+    store.records.set('users/alice/insights/latest', {});
+    assert.equal((await call('/api/decisions/new?revision=1', undefined, 'alice-token', 'DELETE')).status, 200);
+    assert.equal(store.records.has('users/alice/decisions/new'), false);
+    store.records.set('users/alice/decisions/legacy', { ...draft, revision: undefined });
+    assert.equal((await call('/api/decisions/legacy?revision=0', undefined, 'alice-token', 'DELETE')).status, 200);
+    assert.equal(store.records.has('users/alice/decisions/legacy'), false);
     for (let i = 0; i < 5; i++) assert.equal((await call('/api/ai', { action: 'chat', draft, sourceIds: [], message: 'Help me decide.' })).status, 200);
     assert.equal((await call('/api/ai', { action: 'chat', draft, sourceIds: [], message: 'Again.' })).status, 429);
     assert.equal(generations, 5);

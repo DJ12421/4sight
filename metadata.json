@@ -1,6 +1,6 @@
 {
   "name": "Foresight",
-  "description": "A private decision journal: clarify your options, test your assumptions, review outcomes, and connect lessons to their evidence.",
+  "description": "A private Gemini journal for reflection, connected decisions, outcome learning, and a factual personal knowledge graph.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
