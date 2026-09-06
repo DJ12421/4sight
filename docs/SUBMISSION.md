@@ -29,7 +29,7 @@ Write or dictate → reflect with Gemini → connect ideas in a knowledge graph 
 Built with Gemini, Firebase Authentication, Cloud Firestore, Cloud Run and Secret Manager. Multi-turn reflections remain user-isolated, the graph uses explicit stored links, and AI interpretations stay connected to their evidence.
 
 Demo: [ADD VERIFIED WALKTHROUGH LINK]
-Source: [ADD REPOSITORY LINK]
+Source: https://github.com/DJ12421/4sight
 
 #AccelerateAIwithCloudRun
 
@@ -51,7 +51,7 @@ Source: [ADD REPOSITORY LINK]
 | Item | Reference |
 | --- | --- |
 | Live app | Pending |
-| Source repository | Pending |
+| Source repository | https://github.com/DJ12421/4sight — verify public access after pushing the final commit |
 | Walkthrough | Pending |
 | Social post | Pending |
 | AI Studio evidence | Pending |

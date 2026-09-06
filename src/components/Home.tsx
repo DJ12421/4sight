@@ -34,10 +34,10 @@ export function Home({ name, entries, decisions, report, loading, onJournal, onD
     </section>
 
     <section className="home-pulse" aria-label="Workspace summary">
-      <div><strong>{loading ? '—' : String(entries.length).padStart(2, '0')}</strong><span>Journal pages</span></div>
-      <div><strong>{loading ? '—' : String(openExperiments).padStart(2, '0')}</strong><span>Experiments in motion</span></div>
-      <div><strong>{loading ? '—' : String(reviewed).padStart(2, '0')}</strong><span>Outcomes reviewed</span></div>
-      <div><strong>{loading ? '—' : String(connections).padStart(2, '0')}</strong><span>Explicit connections</span></div>
+      <div><strong>{loading ? '—' : entries.length}</strong><span>Journal pages</span></div>
+      <div><strong>{loading ? '—' : openExperiments}</strong><span>Experiments in motion</span></div>
+      <div><strong>{loading ? '—' : reviewed}</strong><span>Outcomes reviewed</span></div>
+      <div><strong>{loading ? '—' : connections}</strong><span>Explicit connections</span></div>
     </section>
 
     <section className="home-loop"><div><p className="eyebrow">A quieter way to move forward</p><h2>Write what is true now.<br />Leave evidence for your future self.</h2></div><ol><li><span>Notice</span>Capture the thought before hindsight edits it.</li><li><span>Connect</span>See the tags, choices, and evidence that belong together.</li><li><span>Try</span>Turn insight into one small experiment you can revisit.</li></ol></section>

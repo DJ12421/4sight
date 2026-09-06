@@ -178,6 +178,16 @@ dd { margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overfl
 .row-action { display: flex; align-items: center; gap: 9px; margin-top: auto; font-size: 11px; font-weight: 600; color: var(--accent); }
 .delete-button { position: absolute; z-index: 2; top: 11px; right: 10px; color: #7a8474; }
 .delete-button:hover { color: #9b4038; }
+.dialog-backdrop { position: fixed; z-index: 100; inset: 0; display: grid; place-items: center; padding: 20px; background: #111a17a8; backdrop-filter: blur(5px); }
+.confirm-dialog { width: min(100%, 470px); padding: 31px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 35px 85px -38px #000; }
+.dialog-icon { display: grid; place-items: center; width: 43px; height: 43px; margin-bottom: 21px; color: #984a42; background: color-mix(in srgb, #b95e54 11%, var(--paper)); border: 1px solid color-mix(in srgb, #b95e54 28%, var(--line)); border-radius: 50%; }
+.confirm-dialog .eyebrow { margin-bottom: 8px; color: #984a42; }
+.confirm-dialog h2 { margin-bottom: 11px; font-size: 30px; overflow-wrap: anywhere; }
+.confirm-dialog > p:last-of-type { color: var(--muted); font-size: 13px; }
+.confirm-dialog .dialog-error { margin: 18px 0 0; padding: 10px 12px; color: #843d36; background: color-mix(in srgb, #b95e54 9%, var(--paper)); border: 1px solid color-mix(in srgb, #b95e54 24%, var(--line)); border-radius: 6px; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 26px; }
+.danger-confirm { color: white; background: #984a42; }
+.danger-confirm:hover { background: #77362f; }
 .due-tag { background: #e5ecda; color: #42652f; }
 .empty-state { text-align: center; padding: 66px 25px; background: #f0f2e9; border: 1px dashed #cbd4c0; border-radius: 8px; margin: 24px 0; }
 .empty-state svg { margin: 0 auto 20px; color: #749069; }
@@ -481,6 +491,8 @@ dd { margin: 0; font-size: 15px; line-height: 1.7; white-space: pre-wrap; overfl
   .graph-legend em { flex-basis: 100%; margin: 0; }
   .pattern-controls h2, .insight h2 { font-size: 26px; }
   .evidence-block { padding: 18px; }
+  .confirm-dialog { padding: 25px; }
+  .dialog-actions { align-items: stretch; flex-direction: column-reverse; }
 }
 @media (max-width: 380px) {
   .hero h1 { font-size: 45px; }
@@ -591,6 +603,7 @@ html[data-theme=dark] .calibration-card { background: linear-gradient(135deg, #1
 html[data-theme=dark] .journal-composer { box-shadow: -6px 0 0 -1px #22352f, 0 24px 50px -42px #000; }
 html[data-theme=dark] .danger-button { color: #e0a39b; border-color: #74514d; }
 html[data-theme=dark] .danger-button:hover { color: #f0bbb3; background: #382925; }
+html[data-theme=dark] .danger-confirm { color: #fff; background: #a85349; }
 
 @media (max-width: 760px) {
   .calibration-card { grid-template-columns: 1fr; gap: 23px; padding: 23px; }
